@@ -25,7 +25,7 @@ export const ProjectsProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const fetchProjects = async () => {
-      console.log("chutiya")
+    
       if (projectsPath) {
         try {
           const entries = await readDir(projectsPath);

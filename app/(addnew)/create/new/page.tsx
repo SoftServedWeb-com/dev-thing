@@ -41,7 +41,7 @@ const NewSitePage = () => {
   useEffect(() => {
     if (creationStatus === "Project created successfully!") {
       const path = `/project/?page=${projectNameRef.current}`;
-      router.push(path);
+      router.push(path );
 
     }
   }, [creationStatus, router]);

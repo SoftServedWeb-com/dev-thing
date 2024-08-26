@@ -1,12 +1,93 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::Path;
 use std::process::Command;
+use serde_json::Value;
 use tauri::{command, Manager};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
 use std::env;
+
+#[derive(serde::Serialize)]
+struct ProjectInfo {
+    framework: String,
+    runtime: String,
+    packages: Vec<Package>,
+}
+
+#[derive(serde::Serialize)]
+struct Package {
+    name: String,
+    version: String,
+}
+
+#[command]
+fn analyze_project(path: String) -> Result<ProjectInfo, String> {
+    let package_json_path = Path::new(&path).join("package.json");
+    let package_json_content = fs::read_to_string(package_json_path)
+        .map_err(|e| format!("Failed to read package.json: {}", e))?;
+
+    let package_json: Value = serde_json::from_str(&package_json_content)
+        .map_err(|e| format!("Failed to parse package.json: {}", e))?;
+
+    let framework = detect_framework(&package_json);
+    let runtime = detect_runtime_version(&path);
+    let packages = extract_packages(&package_json);
+
+    Ok(ProjectInfo {
+        framework,
+        runtime,
+        packages,
+    })
+}
+
+fn detect_framework(package_json: &Value) -> String {
+    if package_json["dependencies"].get("next").is_some() {
+        "Next.js".to_string()
+    } else if package_json["dependencies"].get("react").is_some() {
+        "React".to_string()
+    } else if package_json["dependencies"].get("vue").is_some() {
+        "Vue.js".to_string()
+    } else {
+        "Unknown".to_string()
+    }
+}
+
+fn detect_runtime_version(path: &str) -> String {
+    if Path::new(path).join("pnpm-lock.yaml").exists() {
+        "pnpm".to_string()
+    } else if Path::new(path).join("yarn.lock").exists() {
+        "yarn".to_string()
+    } else {
+        "npm".to_string()
+    }
+}
+
+fn extract_packages(package_json: &Value) -> Vec<Package> {
+    let mut packages = Vec::new();
+
+    if let Some(deps) = package_json["dependencies"].as_object() {
+        for (name, version) in deps {
+            packages.push(Package {
+                name: name.clone(),
+                version: version.as_str().unwrap_or("unknown").to_string(),
+            });
+        }
+    }
+
+    if let Some(dev_deps) = package_json["devDependencies"].as_object() {
+        for (name, version) in dev_deps {
+            packages.push(Package {
+                name: name.clone(),
+                version: version.as_str().unwrap_or("unknown").to_string(),
+            });
+        }
+    }
+
+    packages
+}
 
 
 #[command]
@@ -218,7 +299,8 @@ fn main() {
             launch_vscode,
             open_file_explorer,
             detect_runtime,
-            run_command
+            run_command,
+            analyze_project
         ])
         .setup(|app| {
             // Create the "Local Projects" folder on startup
