@@ -1,12 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronDown, Info, Play, Plus, Search } from 'lucide-react';
+import { ChevronDown, Info, Play, Plus, Search, CircleStop} from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AddDependencydialogbox } from '@/components/addDependencydialogbox';
 import { invoke } from '@tauri-apps/api/tauri';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProjectAnalyzer } from '@/lib/projectDetails';
 import { Input } from '@/components/ui/input';
 import { UpdateDependencyDialog } from '@/components/updateDependencyDialog';
@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { listen } from '@tauri-apps/api/event';
 
 const vsCodeLaunch = async (projectId: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
@@ -46,35 +47,6 @@ const explorerLaunch = async (projectId: string) => {
   }
 };
 
-const localHostLaunch = async (projectId: string) => {
-  const allProjectPath = localStorage.getItem('projectsPath');
-  if (allProjectPath) {
-    const projectPath = `${allProjectPath}/${projectId}`;
-    try {
-      const runtime = await invoke('detect_runtime', { projectPath });
-      let command = '';
-
-      switch (runtime) {
-        case 'pnpm':
-          command = 'pnpm run dev';
-          break;
-        case 'bun':
-          command = 'bun run dev';
-          break;
-        case 'npm':
-          command = 'npm run dev';
-          break;
-        default:
-          console.error('Unsupported runtime detected');
-          return;
-      }
-
-      await invoke('run_command', { projectPath, command });
-    } catch (error) {
-      console.error('Error detecting runtime or running command:', error);
-    }
-  }
-};
 
 
 export default function Page() {
@@ -87,8 +59,73 @@ export default function Page() {
   const [selectedDependency, setSelectedDependency] = useState<string | null>(null); // Manage selected dependency
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [dependencyToDelete, setDependencyToDelete] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const terminalRef = useRef<HTMLPreElement>(null);
 
 
+  useEffect(() => {
+    const checkCommandStatus = async () => {
+      const status:any = await invoke('get_command_status');
+      console.log("fundeya")
+      setIsRunning(status.is_running);
+    };
+
+    checkCommandStatus();
+
+    const unlisten = listen('command_output', (event) => {
+      setTerminalOutput((prev) => prev + event.payload + '\n');
+    });
+
+    const unlistenFinished = listen('command_finished', (event: any) => {
+      setIsRunning(event.payload.is_running);
+    });
+
+    return () => {
+      unlisten.then(f => f());
+      unlistenFinished.then(f => f());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [terminalOutput]);
+
+
+  const localHostLaunch = async () => {
+    const allProjectPath = localStorage.getItem('projectsPath');
+    if (allProjectPath) {
+      const projectPath = `${allProjectPath}/${projectId}`;
+      try {
+        const runtime = await invoke('detect_runtime', { projectPath });
+        let command = '';
+
+        switch (runtime) {
+          case 'pnpm':
+            command = 'pnpm run dev';
+            break;
+          case 'bun':
+            command = 'bun run dev';
+            break;
+          case 'npm':
+            command = 'npm run dev';
+            break;
+          default:
+            console.error('Unsupported runtime detected');
+            return;
+        }
+
+        setActiveTab('terminal');
+        setTerminalOutput('');
+        await invoke('run_command', { projectPath, command });
+      } catch (error) {
+        console.error('Error detecting runtime or running command:', error);
+      }
+    }
+  };
+  
   const handleAddDependency = () => {
     setIsDialogOpen(true); // Open the dialog
   };
@@ -108,7 +145,7 @@ export default function Page() {
     setIsUpdateDialogOpen(true); // Open the dialog for updating
   };
 
-  const handleUpdateDependency = (name: string, version: string) => {
+  const handleUpdateDependency = (name: string,  version: string) => {
     console.log(`Updating dependency: ${name} to version ${version}`);
     // Implement actual update logic here
   };
@@ -140,7 +177,14 @@ export default function Page() {
     setDependencyToDelete(null);
   };
 
-  
+
+  const stopLocalHost = async () => {
+    try {
+      await invoke('stop_command');
+    } catch (error) {
+      console.error('Error stopping command:', error);
+    }
+  };
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen">
@@ -148,11 +192,13 @@ export default function Page() {
       <header className="flex justify-between items-center mb-4 p-6">
         <h1 className="text-3xl font-bold">{projectId}</h1>
         <Button
-          onClick={() => localHostLaunch(projectId as string)}
-          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors ml-auto"
+          onClick={isRunning ? stopLocalHost : localHostLaunch}
+          className={`text-white px-4 py-2 rounded-md flex items-center transition-colors ml-auto ${
+            isRunning ? 'bg-red-600 hover:bg-red-700' : 'bg-purple-600 hover:bg-purple-700'
+          }`}
         >
-          <Play className="w-5 h-5 mr-2" />
-          Start Site
+          {isRunning ? <CircleStop className="w-5 h-5 mr-2" /> : <Play className="w-5 h-5 mr-2" />}
+          {isRunning ? 'Stop Site' : 'Start Site'}
         </Button>
       </header>
 
@@ -279,18 +325,24 @@ export default function Page() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-        {activeTab === 'terminal' && (
+      {activeTab === 'terminal' && (
           <div>
-            <p className="text-gray-300">Terminal content goes here.</p>
+            <pre
+              ref={terminalRef}
+              className="bg-black text-white p-4 rounded-lg overflow-y-auto max-h-80 h-40 sm:h-60 md:h-80 lg:h-96"
+            >
+              <code>{terminalOutput || 'Terminal output will appear here...'}</code>
+            </pre>
           </div>
         )}
+
       </div>
     </div>
   );
 }
 
 // Helper component for detail rows
-const DetailRow = ({
+const DetailRow = ({  
   label,
   value,
   linkText,

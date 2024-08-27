@@ -2,13 +2,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use serde_json::Value;
 use tauri::{command, Manager};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
 use std::env;
+use std::sync::Arc;
+use std::io::{BufRead, BufReader};
+use std::sync::Mutex;
+use serde::Serialize;
+
+type RunningState = Arc<Mutex<bool>>;
 
 #[derive(serde::Serialize)]
 struct ProjectInfo {
@@ -21,6 +27,13 @@ struct ProjectInfo {
 struct Package {
     name: String,
     version: String,
+}
+
+
+
+#[derive(Clone, Serialize)]
+struct CommandStatus {
+    is_running: bool,
 }
 
 #[command]
@@ -91,34 +104,92 @@ fn extract_packages(package_json: &Value) -> Vec<Package> {
 
 
 #[command]
-fn run_command(project_path: String, command: String) -> Result<(), String> {
-    if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(&["/C", "start", "cmd.exe", "/K", &command])
-            .current_dir(project_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else if cfg!(target_os = "macos") {
-        Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(project_path)
-            .arg(format!("; {}", command))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else if cfg!(target_os = "linux") {
-        Command::new("gnome-terminal")
-            .arg("--")
-            .arg("sh")
-            .arg("-c")
-            .arg(format!("cd {} && {}", project_path, command))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else {
-        return Err("Unsupported operating system".to_string());
+fn run_command(
+    state: tauri::State<RunningState>, 
+    window: tauri::Window, 
+    project_path: String, 
+    command: String
+) -> Result<(), String> {
+    let state = state.inner().clone(); // Clone the Arc for thread safety
+    let mut is_running = state.lock().unwrap();
+    if *is_running {
+        return Err("A command is already running".to_string());
     }
+    *is_running = true;
+    drop(is_running);
+
+    std::thread::spawn(move || {
+        let cmd = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &command])
+                .current_dir(&project_path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .current_dir(&project_path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())
+        };
+
+        match cmd {
+            Ok(mut child) => {
+                let stdout = child.stdout.take().unwrap();
+                let stderr = child.stderr.take().unwrap();
+
+                let stdout_reader = BufReader::new(stdout);
+                let stderr_reader = BufReader::new(stderr);
+
+                for line in stdout_reader.lines().chain(stderr_reader.lines()) {
+                    if let Ok(line) = line {
+                        window.emit("command_output", &line).unwrap();
+                    }
+                    if !*state.lock().unwrap() {
+                        break;
+                    }
+                }
+
+                if *state.lock().unwrap() {
+                    let _ = child.wait();
+                } else {
+                    let _ = child.kill();
+                }
+
+                *state.lock().unwrap() = false;
+                window.emit("command_finished", CommandStatus { is_running: false }).unwrap();
+            }
+            Err(e) => {
+                *state.lock().unwrap() = false;
+                window.emit("command_error", e).unwrap();
+            }
+        }
+    });
 
     Ok(())
+}
+
+#[command]
+fn stop_command(state: tauri::State<RunningState>) -> Result<(), String> {
+    let mut is_running = state.inner().lock().unwrap();  // Use inner() to access the Mutex<bool>
+    if !*is_running {
+        return Err("No command is currently running".to_string());
+    }
+    *is_running = false;
+    Ok(())
+}
+
+
+#[command]
+fn get_command_status(state: tauri::State<RunningState>) -> CommandStatus {
+    CommandStatus {
+        is_running: *state.inner().lock().unwrap(),  // Use inner() to access the Mutex<bool>
+    }
 }
 
 #[command]
@@ -290,8 +361,10 @@ fn create_project(runtime: &str, framework: &str, project_name: &str, location: 
 
 
 fn main() {
+    let running_state = Arc::new(Mutex::new(false)); // Initialize the state
     let _ = fix_path_env::fix();
     tauri::Builder::default()
+        .manage(running_state) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
             create_local_projects_folder,
             start_project_creation,
@@ -300,7 +373,9 @@ fn main() {
             open_file_explorer,
             detect_runtime,
             run_command,
-            analyze_project
+            analyze_project,
+            stop_command,
+            get_command_status,
         ])
         .setup(|app| {
             // Create the "Local Projects" folder on startup
