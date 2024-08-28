@@ -1,20 +1,27 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, Stdio, Child};
+use nix::errno::Errno;
 use serde_json::Value;
 use tauri::{command, Manager};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
 use std::env;
-use std::sync::Arc;
 use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
-use serde::Serialize;
+use tauri::State;
+use nix::unistd::{Pid, setsid};
+use nix::sys::signal::{kill, Signal};
+use nix::sys::wait::waitpid;
 
-type RunningState = Arc<Mutex<bool>>;
+struct ProjectManager(Mutex<HashMap<u32, Child>>);
+
+
 
 #[derive(serde::Serialize)]
 struct ProjectInfo {
@@ -29,13 +36,6 @@ struct Package {
     version: String,
 }
 
-
-
-#[derive(Clone, Serialize)]
-struct CommandStatus {
-    is_running: bool,
-}
-
 #[command]
 fn analyze_project(path: String) -> Result<ProjectInfo, String> {
     let package_json_path = Path::new(&path).join("package.json");
@@ -45,7 +45,8 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
     let package_json: Value = serde_json::from_str(&package_json_content)
         .map_err(|e| format!("Failed to parse package.json: {}", e))?;
 
-    let framework = detect_framework(&package_json);
+    // let framework = detect_framework(&package_json);
+    let (framework, _command) = detect_framework(&package_json);
     let runtime = detect_runtime_version(&path);
     let packages = extract_packages(&package_json);
 
@@ -55,19 +56,19 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
         packages,
     })
 }
+///media/ron-tennyson/Work/Projects/local-node/node_modules/next/dist/bin/next
 
-fn detect_framework(package_json: &Value) -> String {
+fn detect_framework(package_json: &Value) -> (String, String) {
     if package_json["dependencies"].get("next").is_some() {
-        "Next.js".to_string()
+        ("Next.js".to_string(), "node node_modules/next/dist/bin/next dev".to_string())
     } else if package_json["dependencies"].get("react").is_some() {
-        "React".to_string()
+        ("React".to_string(), "node node_modules/.bin/react-scripts start".to_string())
     } else if package_json["dependencies"].get("vue").is_some() {
-        "Vue.js".to_string()
+        ("Vue.js".to_string(), "node node_modules/.bin/vue-cli-service serve".to_string())
     } else {
-        "Unknown".to_string()
+        ("Unknown".to_string(), "".to_string())
     }
 }
-
 fn detect_runtime_version(path: &str) -> String {
     if Path::new(path).join("pnpm-lock.yaml").exists() {
         "pnpm".to_string()
@@ -100,96 +101,6 @@ fn extract_packages(package_json: &Value) -> Vec<Package> {
     }
 
     packages
-}
-
-
-#[command]
-fn run_command(
-    state: tauri::State<RunningState>, 
-    window: tauri::Window, 
-    project_path: String, 
-    command: String
-) -> Result<(), String> {
-    let state = state.inner().clone(); // Clone the Arc for thread safety
-    let mut is_running = state.lock().unwrap();
-    if *is_running {
-        return Err("A command is already running".to_string());
-    }
-    *is_running = true;
-    drop(is_running);
-
-    std::thread::spawn(move || {
-        let cmd = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", &command])
-                .current_dir(&project_path)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| e.to_string())
-        } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&command)
-                .current_dir(&project_path)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| e.to_string())
-        };
-
-        match cmd {
-            Ok(mut child) => {
-                let stdout = child.stdout.take().unwrap();
-                let stderr = child.stderr.take().unwrap();
-
-                let stdout_reader = BufReader::new(stdout);
-                let stderr_reader = BufReader::new(stderr);
-
-                for line in stdout_reader.lines().chain(stderr_reader.lines()) {
-                    if let Ok(line) = line {
-                        window.emit("command_output", &line).unwrap();
-                    }
-                    if !*state.lock().unwrap() {
-                        break;
-                    }
-                }
-
-                if *state.lock().unwrap() {
-                    let _ = child.wait();
-                } else {
-                    let _ = child.kill();
-                }
-
-                *state.lock().unwrap() = false;
-                window.emit("command_finished", CommandStatus { is_running: false }).unwrap();
-            }
-            Err(e) => {
-                *state.lock().unwrap() = false;
-                window.emit("command_error", e).unwrap();
-            }
-        }
-    });
-
-    Ok(())
-}
-
-#[command]
-fn stop_command(state: tauri::State<RunningState>) -> Result<(), String> {
-    let mut is_running = state.inner().lock().unwrap();  // Use inner() to access the Mutex<bool>
-    if !*is_running {
-        return Err("No command is currently running".to_string());
-    }
-    *is_running = false;
-    Ok(())
-}
-
-
-#[command]
-fn get_command_status(state: tauri::State<RunningState>) -> CommandStatus {
-    CommandStatus {
-        is_running: *state.inner().lock().unwrap(),  // Use inner() to access the Mutex<bool>
-    }
 }
 
 #[command]
@@ -260,13 +171,7 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn start_project_creation(
-    window: tauri::Window,
-    runtime: String,
-    framework: String,
-    project_name: String,
-    location: String,
-) -> Result<(), String> {
+fn start_project_creation(window: tauri::Window, runtime: String, framework: String, project_name: String, location: String) -> Result<(), String> {
     thread::spawn(move || {
         window.emit("creation_status", "Starting project creation...").unwrap();
 
@@ -359,12 +264,168 @@ fn create_project(runtime: &str, framework: &str, project_name: &str, location: 
   }
 }
 
+// #[tauri::command]
+// async fn run_command(
+//     state: State<'_, RunningState>,
+//     window: tauri::Window,
+//     project_path: String,
+//     command: String
+// ) -> Result<CommandStatus, String> {
+//     let mut state_guard = state.lock().map_err(|e| e.to_string())?;
+//     if state_guard.is_some() {
+//         return Err("A command is already running".to_string());
+//     }
+
+//     let cmd = if cfg!(target_os = "windows") {
+//         Command::new("cmd")
+//             .args(&["/C", &command])
+//             .current_dir(&project_path)
+//             .stdout(Stdio::piped())
+//             .stderr(Stdio::piped())
+//             .spawn()
+//     } else {
+//         Command::new("sh")
+//             .arg("-c")
+//             .arg(&command)
+//             .current_dir(&project_path)
+//             .stdout(Stdio::piped())
+//             .stderr(Stdio::piped())
+//             .spawn()
+//     };
+
+//     match cmd {
+//         Ok(mut child) => {
+//             let pid = child.id();
+//             let stdout = child.stdout.take().unwrap();
+//             let stderr = child.stderr.take().unwrap();
+
+//             *state_guard = Some((child, pid));
+//             drop(state_guard);
+
+//             let state_clone = Arc::clone(&state);
+//             tauri::async_runtime::spawn(async move {
+//                 let stdout_reader = BufReader::new(stdout);
+//                 let stderr_reader = BufReader::new(stderr);
+
+//                 for line in stdout_reader.lines().chain(stderr_reader.lines()) {
+//                     if let Ok(line) = line {
+//                         let _ = window.emit("command_output", &line);
+//                     }
+//                     if state_clone.lock().unwrap().is_none() {
+//                         break;
+//                     }
+//                 }
+
+//                 let mut state_guard = state_clone.lock().unwrap();
+//                 if let Some((child, _)) = state_guard.as_mut() {
+//                     let _ = child.wait();
+//                 }
+//                 *state_guard = None;
+//                 let _ = window.emit("command_finished", CommandStatus { is_running: false, pid: None });
+//             });
+
+//             Ok(CommandStatus { is_running: true, pid: Some(pid) })
+//         }
+//         Err(e) => {
+//             Err(e.to_string())
+//         }
+//     }
+// }
+
+#[command]
+fn start_project(
+    project_path: String,
+    window: tauri::Window,
+    state: State<'_, ProjectManager>,
+) -> Result<u32, String> {
+    // Read package.json
+    let package_json_path = format!("{}/package.json", project_path);
+    let package_json: Value = serde_json::from_str(&std::fs::read_to_string(package_json_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+
+    let (_framework, command) = detect_framework(&package_json);
+    
+    if command.is_empty() {
+        return Err("Unsupported framework".to_string());
+    }
+
+    // Split the command into executable and arguments
+    let mut command_parts = command.split_whitespace();
+    let executable = command_parts.next().ok_or("Failed to parse command")?;
+    let args: Vec<&str> = command_parts.collect();
+
+    // Spawn the child process directly
+    let mut child = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(&["/C", &command])
+            .current_dir(&project_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    } else {
+        Command::new(executable)
+            .args(&args)
+            .current_dir(&project_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    }.map_err(|e| e.to_string())?;
+
+    let pid = child.id();
+
+    // Stream output
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    
+    let window_clone = window.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                window.emit("project-output", (pid, line)).unwrap();
+            }
+        }
+    });
+
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                window_clone.emit("project-error", (pid, line)).unwrap();
+            }
+        }
+    });
+    
+    // Store the child process
+    state.0.lock().unwrap().insert(pid, child);
+    
+    Ok(pid)
+}
+
+#[command]
+fn close_project(state: State<'_, ProjectManager>, pid: u32) -> Result<(), String> {
+    let mut projects = state.0.lock().unwrap();
+    if projects.remove(&pid).is_some() {
+        // Send SIGTERM to the entire process group
+        kill(Pid::from_raw(pid as i32), Signal::SIGTERM).map_err(|e| e.to_string())?;
+        
+        // Wait for the process group to exit
+        loop {
+            match waitpid(Pid::from_raw(pid as i32), None) {
+                Ok(_) => break,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    Ok(())
+}
+
+
 
 fn main() {
-    let running_state = Arc::new(Mutex::new(false)); // Initialize the state
+    // Initialize the state
     let _ = fix_path_env::fix();
     tauri::Builder::default()
-        .manage(running_state) // Manage the state within Tauri
+        .manage(ProjectManager(Mutex::new(HashMap::new()))) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
             create_local_projects_folder,
             start_project_creation,
@@ -372,10 +433,10 @@ fn main() {
             launch_vscode,
             open_file_explorer,
             detect_runtime,
-            run_command,
             analyze_project,
-            stop_command,
-            get_command_status,
+            start_project,
+            close_project,
+            
         ])
         .setup(|app| {
             // Create the "Local Projects" folder on startup

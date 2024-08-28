@@ -1,9 +1,7 @@
 'use client';
-
 import { Button } from '@/components/ui/button';
 import { ChevronDown, Info, Play, Plus, Search, CircleStop} from 'lucide-react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { AddDependencydialogbox } from '@/components/addDependencydialogbox';
 import { invoke } from '@tauri-apps/api/tauri';
 import { useEffect, useRef, useState } from 'react';
@@ -25,7 +23,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { listen } from '@tauri-apps/api/event';
 
@@ -50,10 +47,9 @@ const explorerLaunch = async (projectId: string) => {
 
 
 export default function Page() {
-  const searchParams = useSearchParams();
-  const projectId = searchParams.get('page');
+ 
   const [activeTab, setActiveTab] = useState('overview');
-  const {projectInfo,error} = useProjectAnalyzer();
+  const {projectInfo,error,projectName} = useProjectAnalyzer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false); // State for update dialog
   const [selectedDependency, setSelectedDependency] = useState<string | null>(null); // Manage selected dependency
@@ -62,30 +58,20 @@ export default function Page() {
   const [isRunning, setIsRunning] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState('');
   const terminalRef = useRef<HTMLPreElement>(null);
+  const [pid, setPid] = useState<number | null>(null);
 
 
   useEffect(() => {
-    const checkCommandStatus = async () => {
-      const status:any = await invoke('get_command_status');
-      console.log("fundeya")
-      setIsRunning(status.is_running);
-    };
-
-    checkCommandStatus();
-
-    const unlisten = listen('command_output', (event) => {
-      setTerminalOutput((prev) => prev + event.payload + '\n');
-    });
-
-    const unlistenFinished = listen('command_finished', (event: any) => {
-      setIsRunning(event.payload.is_running);
-    });
-
+    const unlisten = listen('project-output', (event: { payload: [number, string] }) => {
+      const [eventPid, output] = event.payload;
+      setPid(eventPid);
+      console.log("PID", eventPid, output);
+      setTerminalOutput((prev) => prev + output + '\n');
+    });    
     return () => {
       unlisten.then(f => f());
-      unlistenFinished.then(f => f());
     };
-  }, []);
+  }, [isRunning, terminalOutput]);
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -93,35 +79,20 @@ export default function Page() {
     }
   }, [terminalOutput]);
 
-
   const localHostLaunch = async () => {
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath) {
-      const projectPath = `${allProjectPath}/${projectId}`;
+      const projectPath = `${allProjectPath}/${projectName}`;
       try {
-        const runtime = await invoke('detect_runtime', { projectPath });
-        let command = '';
-
-        switch (runtime) {
-          case 'pnpm':
-            command = 'pnpm run dev';
-            break;
-          case 'bun':
-            command = 'bun run dev';
-            break;
-          case 'npm':
-            command = 'npm run dev';
-            break;
-          default:
-            console.error('Unsupported runtime detected');
-            return;
-        }
-
         setActiveTab('terminal');
         setTerminalOutput('');
-        await invoke('run_command', { projectPath, command });
+        const result: number = await invoke('start_project', { projectPath });
+        setIsRunning(true);
+        setPid(result);
+        console.log("PID", result);
       } catch (error) {
-        console.error('Error detecting runtime or running command:', error);
+        console.error('Error running command:', error);
+        setTerminalOutput(prev => prev + `\nError running command: ${error}\n`);
       }
     }
   };
@@ -139,7 +110,6 @@ export default function Page() {
     // Add your logic to handle the new dependency, e.g., updating state or making API calls
   };
   
-
   const openUpdateDialog = (dependency: string) => {
     setSelectedDependency(dependency);
     setIsUpdateDialogOpen(true); // Open the dialog for updating
@@ -159,7 +129,6 @@ export default function Page() {
     setIsDeleteDialogOpen(true);  // Open the delete confirmation dialog
   };
 
-
   const confirmDeleteDependency = () => {
     if (dependencyToDelete) {
       console.log(`Deleting dependency: ${dependencyToDelete}`);
@@ -178,11 +147,17 @@ export default function Page() {
   };
 
 
+
   const stopLocalHost = async () => {
     try {
-      await invoke('stop_command');
+      if (!pid) return;
+      console.log("Stopping project with PID:", pid);
+      await invoke('close_project', { pid });
+      setIsRunning(false);
+      setPid(null);
     } catch (error) {
-      console.error('Error stopping command:', error);
+      console.error('Error stopping command:', error, pid);
+      setTerminalOutput(prev => prev + `\nError stopping command: ${error}\n`);
     }
   };
 
@@ -190,7 +165,7 @@ export default function Page() {
     <div className="bg-gray-900 text-gray-200 min-h-screen">
       {/* Header Section */}
       <header className="flex justify-between items-center mb-4 p-6">
-        <h1 className="text-3xl font-bold">{projectId}</h1>
+        <h1 className="text-3xl font-bold">{projectName}</h1>
         <Button
           onClick={isRunning ? stopLocalHost : localHostLaunch}
           className={`text-white px-4 py-2 rounded-md flex items-center transition-colors ml-auto ${
@@ -208,7 +183,7 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => explorerLaunch(projectId as string)}
+              onClick={() => explorerLaunch(projectName as string)}
               className="text-purple-400 hover:underline"
             >
               Go to Site Folder
@@ -217,7 +192,7 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => vsCodeLaunch(projectId as string)}
+              onClick={() => vsCodeLaunch(projectName as string)}
               className="text-purple-400 hover:underline"
             >
               VS Code

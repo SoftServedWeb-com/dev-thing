@@ -1,5 +1,5 @@
 "use client"
-import React, { createContext, useState, useEffect, useContext, ReactNode } from "react";
+import React, { createContext, useState, useEffect, useContext, ReactNode, Suspense } from "react";
 import { invoke } from '@tauri-apps/api/tauri';
 import { useSearchParams } from 'next/navigation';
 
@@ -64,7 +64,8 @@ export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) =
         error
       }}
     >
-      {children}
+    
+        {children}
     </ProjectAnalyzerContext.Provider>
   );
 };
