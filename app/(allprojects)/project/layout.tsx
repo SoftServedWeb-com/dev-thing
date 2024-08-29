@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "../../globals.css";
 import Sidebar from "@/components/sidebar";
@@ -19,14 +18,14 @@ export default function RootLayout({
       <body className={`${inter.className} bg-gray-900`}>
       <ErrorBoundary>
         <ProjectsProvider>
-          <Suspense fallback={<div>Loading...</div>}>
-          <ProjectAnalyzerProvider>
           <div className="flex h-screen">
             <Sidebar />
-            <main className="flex-1  overflow-hidden">{children}</main>
+              <Suspense fallback={<div>Loading...</div>}>
+                <ProjectAnalyzerProvider>
+                  <main className="flex-1  overflow-hidden">{children}</main>
+                </ProjectAnalyzerProvider>
+              </Suspense>
           </div>
-          </ProjectAnalyzerProvider>
-          </Suspense>
         </ProjectsProvider>
       </ErrorBoundary>
       </body>

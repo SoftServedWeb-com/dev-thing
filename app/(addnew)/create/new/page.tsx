@@ -36,7 +36,7 @@ const NewSitePage = () => {
     return () => {
       unlisten.then(f => f());
     };
-  }, []);
+  }, [projectName]);
 
   useEffect(() => {
     if (creationStatus === "Project created successfully!") {

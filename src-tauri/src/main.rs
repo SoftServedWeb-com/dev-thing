@@ -2,10 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio, Child};
-use nix::errno::Errno;
 use serde_json::Value;
 use tauri::{command, Manager};
 use tauri::api::path::home_dir;
@@ -15,7 +13,7 @@ use std::env;
 use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 use tauri::State;
-use nix::unistd::{Pid, setsid};
+use nix::unistd::Pid;
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::waitpid;
 

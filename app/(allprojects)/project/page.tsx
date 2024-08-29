@@ -49,29 +49,16 @@ const explorerLaunch = async (projectId: string) => {
 export default function Page() {
  
   const [activeTab, setActiveTab] = useState('overview');
-  const {projectInfo,error,projectName} = useProjectAnalyzer();
+  const { projectName, isRunning, pid, setIsRunning, setPid,projectInfo, error, terminalOutput, setTerminalOutput,appendTerminalOutput,resetTerminalOutput} = useProjectAnalyzer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false); // State for update dialog
   const [selectedDependency, setSelectedDependency] = useState<string | null>(null); // Manage selected dependency
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [dependencyToDelete, setDependencyToDelete] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [terminalOutput, setTerminalOutput] = useState('');
   const terminalRef = useRef<HTMLPreElement>(null);
-  const [pid, setPid] = useState<number | null>(null);
 
 
-  useEffect(() => {
-    const unlisten = listen('project-output', (event: { payload: [number, string] }) => {
-      const [eventPid, output] = event.payload;
-      setPid(eventPid);
-      console.log("PID", eventPid, output);
-      setTerminalOutput((prev) => prev + output + '\n');
-    });    
-    return () => {
-      unlisten.then(f => f());
-    };
-  }, [isRunning, terminalOutput]);
+  
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -85,14 +72,24 @@ export default function Page() {
       const projectPath = `${allProjectPath}/${projectName}`;
       try {
         setActiveTab('terminal');
-        setTerminalOutput('');
+        resetTerminalOutput(); // Reset terminal output before starting
         const result: number = await invoke('start_project', { projectPath });
-        setIsRunning(true);
         setPid(result);
-        console.log("PID", result);
+        setIsRunning(true);
+  
+        // Store PID and running status in local storage
+        const projectData = {
+          pid: result,
+          isRunner: true
+        };
+  
+        console.log(`PID in launch ${projectName} is`, result);
+        console.log("projectData", projectData);
+        localStorage.setItem(projectName as string, JSON.stringify(projectData));
+  
       } catch (error) {
         console.error('Error running command:', error);
-        setTerminalOutput(prev => prev + `\nError running command: ${error}\n`);
+        appendTerminalOutput(`Error running command: ${error}`);
       }
     }
   };
@@ -146,20 +143,30 @@ export default function Page() {
     setDependencyToDelete(null);
   };
 
-
-
+  
   const stopLocalHost = async () => {
     try {
-      if (!pid) return;
       console.log("Stopping project with PID:", pid);
-      await invoke('close_project', { pid });
+      if (!pid) return;
+      await invoke('close_project', { pid: pid });
       setIsRunning(false);
       setPid(null);
+      resetTerminalOutput(); // Reset terminal output after stopping
+  
+      // Update local storage to reflect stopped status
+      const projectData = {
+        pid: null,
+        isRunner: false
+      };
+      localStorage.removeItem(`${projectName}_terminalOutput`);
+      localStorage.removeItem(projectName as string);
     } catch (error) {
-      console.error('Error stopping command:', error, pid);
-      setTerminalOutput(prev => prev + `\nError stopping command: ${error}\n`);
+      console.error('Error stopping command:', error);
+      appendTerminalOutput(`Error stopping command: ${error}`);
     }
   };
+  
+  
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen">
