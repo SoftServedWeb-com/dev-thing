@@ -1,7 +1,8 @@
 "use client"
-import React, { createContext, useState, useEffect, useContext, ReactNode } from "react";
+import React, { createContext, useState, useEffect, useContext, ReactNode, Suspense } from "react";
 import { invoke } from '@tauri-apps/api/tauri';
 import { useSearchParams } from 'next/navigation';
+import { listen } from '@tauri-apps/api/event';
 
 interface ProjectInfo {
   framework: string;
@@ -13,6 +14,14 @@ interface ProjectAnalyzerContextType {
   projectName: string;
   projectInfo: ProjectInfo | null;
   error: string | null;
+  pid: number | null;
+  isRunning: boolean;
+  terminalOutput: string;
+  setIsRunning: (isRunning: boolean) => void;
+  setPid: (pid: number | null) => void;
+  setTerminalOutput: (output: string) => void;
+  appendTerminalOutput: (output: string) => void;
+  resetTerminalOutput: () => void;
 }
 
 const ProjectAnalyzerContext = createContext<ProjectAnalyzerContextType | undefined>(undefined);
@@ -20,28 +29,65 @@ const ProjectAnalyzerContext = createContext<ProjectAnalyzerContextType | undefi
 export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) => {
   const searchParams = useSearchParams();
   const projectNameFromURL = searchParams.get('page') || '';
- 
-  const [projectName, setProjectName] = useState(projectNameFromURL);
+  const [projectName, setProjectName] = useState<string>(projectNameFromURL);
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pid, setPid] = useState<number | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [terminalOutput, setTerminalOutput] = useState('');
+
+  const appendTerminalOutput = (output: string) => {
+    setTerminalOutput(prev => {
+      const newOutput = prev + output + '\n';
+      localStorage.setItem(`${projectName}_terminalOutput`, newOutput);
+      return newOutput;
+    });
+  };
+
+  const resetTerminalOutput = () => {
+    setTerminalOutput('');
+    localStorage.removeItem(`${projectName}_terminalOutput`);
+  };
 
   useEffect(() => {
     const analyzeProject = async () => {
-      console.log("Analyzing project...");
+      console.log("Analyzing project:", projectNameFromURL);
+      setProjectName(projectNameFromURL);
+
       if (projectNameFromURL) {
         const allProjectPath = localStorage.getItem('projectsPath');
+        const projectData = localStorage.getItem(projectNameFromURL);
+        const storedTerminalOutput = localStorage.getItem(`${projectNameFromURL}_terminalOutput`);
+
         if (allProjectPath) {
           const projectPath = `${allProjectPath}/${projectNameFromURL}`;
           try {
-            console.log("Invoking analyze_project with path:", projectPath);
             const result = await invoke<ProjectInfo>('analyze_project', { path: projectPath });
-            console.log("Analysis result:", result);
             setProjectInfo(result);
             setError(null);
+
+            if (projectData) {
+              const { pid, isRunner } = JSON.parse(projectData);
+              setPid(pid);
+              setIsRunning(isRunner);
+              console.log(`Project ${projectNameFromURL} - PID: ${pid}, isRunning: ${isRunner}`);
+              
+              // Set stored terminal output or set it to empty if not running
+              setTerminalOutput(isRunner ? (storedTerminalOutput || '') : '');
+            } else {
+              console.log(`No stored data for project ${projectNameFromURL}`);
+              setPid(null);
+              setIsRunning(false);
+              setTerminalOutput('');
+            }
+
           } catch (err) {
             console.error("Error analyzing project:", err);
             setError("Failed to analyze project. Please check the project path.");
             setProjectInfo(null);
+            setPid(null);
+            setIsRunning(false);
+            setTerminalOutput('');
           }
         } else {
           setError("Projects path not found in localStorage.");
@@ -49,21 +95,43 @@ export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) =
       } else {
         console.log("Project name not set in URL");
         setError("Project name not set. Please provide a valid project name in the URL.");
+        setPid(null);
+        setIsRunning(false);
+        setTerminalOutput('');
       }
     };
 
-    setProjectName(projectNameFromURL);
     analyzeProject();
-  }, [projectNameFromURL]);
+
+    // Set up event listener for project output
+    const unlisten = listen('project-output', (event: { payload: [number, string] }) => {
+      const [eventPid, output] = event.payload;
+      if (eventPid === pid) {
+        appendTerminalOutput(output);
+      }
+    });
+
+    return () => {
+      unlisten.then(f => f());
+    };
+  }, [projectNameFromURL, pid]);
+
+  const contextValue: ProjectAnalyzerContextType = {
+    projectName,
+    projectInfo,
+    error,
+    pid,
+    isRunning,
+    terminalOutput,
+    setIsRunning,
+    setPid,
+    setTerminalOutput,
+    appendTerminalOutput,
+    resetTerminalOutput,
+  };
 
   return (
-    <ProjectAnalyzerContext.Provider 
-      value={{ 
-        projectName, 
-        projectInfo, 
-        error
-      }}
-    >
+    <ProjectAnalyzerContext.Provider value={contextValue}>
       {children}
     </ProjectAnalyzerContext.Provider>
   );
@@ -76,5 +144,3 @@ export const useProjectAnalyzer = () => {
   }
   return context;
 };
-
-export default ProjectAnalyzerContext;

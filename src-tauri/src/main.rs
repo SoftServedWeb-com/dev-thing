@@ -1,14 +1,26 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio, Child};
 use serde_json::Value;
 use tauri::{command, Manager};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
 use std::env;
+use std::io::{BufRead, BufReader};
+use std::sync::Mutex;
+use tauri::State;
+use nix::unistd::Pid;
+use nix::sys::signal::{kill, Signal};
+use nix::sys::wait::waitpid;
+use tauri::Window;
+
+struct ProjectManager(Mutex<HashMap<u32, Child>>);
+
+
 
 #[derive(serde::Serialize)]
 struct ProjectInfo {
@@ -32,7 +44,8 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
     let package_json: Value = serde_json::from_str(&package_json_content)
         .map_err(|e| format!("Failed to parse package.json: {}", e))?;
 
-    let framework = detect_framework(&package_json);
+    // let framework = detect_framework(&package_json);
+    let (framework, _command) = detect_framework(&package_json);
     let runtime = detect_runtime_version(&path);
     let packages = extract_packages(&package_json);
 
@@ -42,19 +55,19 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
         packages,
     })
 }
+///media/ron-tennyson/Work/Projects/local-node/node_modules/next/dist/bin/next
 
-fn detect_framework(package_json: &Value) -> String {
+fn detect_framework(package_json: &Value) -> (String, String) {
     if package_json["dependencies"].get("next").is_some() {
-        "Next.js".to_string()
+        ("Next.js".to_string(), "node node_modules/next/dist/bin/next dev".to_string())
     } else if package_json["dependencies"].get("react").is_some() {
-        "React".to_string()
+        ("React".to_string(), "node node_modules/.bin/react-scripts start".to_string())
     } else if package_json["dependencies"].get("vue").is_some() {
-        "Vue.js".to_string()
+        ("Vue.js".to_string(), "node node_modules/.bin/vue-cli-service serve".to_string())
     } else {
-        "Unknown".to_string()
+        ("Unknown".to_string(), "".to_string())
     }
 }
-
 fn detect_runtime_version(path: &str) -> String {
     if Path::new(path).join("pnpm-lock.yaml").exists() {
         "pnpm".to_string()
@@ -87,38 +100,6 @@ fn extract_packages(package_json: &Value) -> Vec<Package> {
     }
 
     packages
-}
-
-
-#[command]
-fn run_command(project_path: String, command: String) -> Result<(), String> {
-    if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(&["/C", "start", "cmd.exe", "/K", &command])
-            .current_dir(project_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else if cfg!(target_os = "macos") {
-        Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(project_path)
-            .arg(format!("; {}", command))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else if cfg!(target_os = "linux") {
-        Command::new("gnome-terminal")
-            .arg("--")
-            .arg("sh")
-            .arg("-c")
-            .arg(format!("cd {} && {}", project_path, command))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    } else {
-        return Err("Unsupported operating system".to_string());
-    }
-
-    Ok(())
 }
 
 #[command]
@@ -189,13 +170,7 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn start_project_creation(
-    window: tauri::Window,
-    runtime: String,
-    framework: String,
-    project_name: String,
-    location: String,
-) -> Result<(), String> {
+fn start_project_creation(window: tauri::Window, runtime: String, framework: String, project_name: String, location: String) -> Result<(), String> {
     thread::spawn(move || {
         window.emit("creation_status", "Starting project creation...").unwrap();
 
@@ -288,10 +263,290 @@ fn create_project(runtime: &str, framework: &str, project_name: &str, location: 
   }
 }
 
+#[command]
+fn start_project(
+    project_path: String,
+    window: tauri::Window,
+    state: State<'_, ProjectManager>,
+) -> Result<u32, String> {
+    // Read package.json
+    let package_json_path = format!("{}/package.json", project_path);
+    let package_json: Value = serde_json::from_str(&std::fs::read_to_string(package_json_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+
+    let (_framework, command) = detect_framework(&package_json);
+    
+    if command.is_empty() {
+        return Err("Unsupported framework".to_string());
+    }
+
+    // Split the command into executable and arguments
+    let mut command_parts = command.split_whitespace();
+    let executable = command_parts.next().ok_or("Failed to parse command")?;
+    let args: Vec<&str> = command_parts.collect();
+
+    // Spawn the child process directly
+    let mut child = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(&["/C", &command])
+            .current_dir(&project_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    } else {
+        Command::new(executable)
+            .args(&args)
+            .current_dir(&project_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    }.map_err(|e| e.to_string())?;
+
+    let pid = child.id();
+
+    // Stream output
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    
+    let window_clone = window.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                window.emit("project-output", (pid, line)).unwrap();
+            }
+        }
+    });
+
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                window_clone.emit("project-error", (pid, line)).unwrap();
+            }
+        }
+    });
+    
+    // Store the child process
+    state.0.lock().unwrap().insert(pid, child);
+    
+    Ok(pid)
+}
+
+#[command]
+fn close_project(state: State<'_, ProjectManager>, pid: u32) -> Result<(), String> {
+    let mut projects = state.0.lock().unwrap();
+    if projects.remove(&pid).is_some() {
+        // Send SIGTERM to the entire process group
+        kill(Pid::from_raw(pid as i32), Signal::SIGTERM).map_err(|e| e.to_string())?;
+        
+        // Wait for the process group to exit
+        loop {
+            match waitpid(Pid::from_raw(pid as i32), None) {
+                Ok(_) => break,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+    Ok(())
+}
+
+#[command]
+fn install_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+    version: Option<String>,
+) -> Result<(), String> {
+    let versioned_dependency = if let Some(ver) = version {
+        format!("{}@{}", dependency, ver)
+    } else {
+        dependency
+    };
+    let cmd = match runtime.as_str() {
+        "pnpm" => format!("pnpm add {}", versioned_dependency),
+        "npm" => format!("npm install {}", versioned_dependency),
+        "yarn" => format!("yarn add {}", versioned_dependency),
+        "bun" => format!("bun add {}", versioned_dependency),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("install_status", "Installing dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} installed successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("install_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Installation failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("install_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("install_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
+
+#[command]
+fn update_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+    version: Option<String>,
+) -> Result<(), String> {
+    let cmd = if let Some(ver) = version {
+        match runtime.as_str() {
+            "pnpm" => format!("pnpm add {}@{}", dependency, ver),
+            "npm" => format!("npm install {}@{}", dependency, ver),
+            "yarn" => format!("yarn add {}@{}", dependency, ver),
+            "bun" => format!("bun add {}@{}", dependency, ver),
+            _ => return Err("Unsupported runtime".to_string()),
+        }
+    } else {
+        match runtime.as_str() {
+            "pnpm" => format!("pnpm update {}", dependency),
+            "npm" => format!("npm update {}", dependency),
+            "yarn" => format!("yarn upgrade {}", dependency),
+            "bun" => format!("bun update {}", dependency),
+            _ => return Err("Unsupported runtime".to_string()),
+        }
+    };
+
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("update_status", "Updating dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} updated successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("update_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Update failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("update_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("update_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
+
+#[command]
+fn delete_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+) -> Result<(), String> {
+    let cmd = match runtime.as_str() {
+        "pnpm" => format!("pnpm remove {}", dependency),
+        "npm" => format!("npm uninstall {}", dependency),
+        "yarn" => format!("yarn remove {}", dependency),
+        "bun" => format!("bun remove {}", dependency),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("delete_status", "Deleting dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} deleted successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("delete_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Deletion failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("delete_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("delete_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
 
 fn main() {
+    // Initialize the state
     let _ = fix_path_env::fix();
     tauri::Builder::default()
+        .manage(ProjectManager(Mutex::new(HashMap::new()))) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
             create_local_projects_folder,
             start_project_creation,
@@ -299,8 +554,12 @@ fn main() {
             launch_vscode,
             open_file_explorer,
             detect_runtime,
-            run_command,
-            analyze_project
+            analyze_project,
+            start_project,
+            close_project,
+            install_dependency,
+            update_dependency,
+            delete_dependency,
         ])
         .setup(|app| {
             // Create the "Local Projects" folder on startup

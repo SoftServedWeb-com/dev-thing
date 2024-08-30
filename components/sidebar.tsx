@@ -22,6 +22,14 @@ const Sidebar = () => {
     setIsProjectsOpen(prevState => !prevState);
   };
 
+  const router = useRouter();
+
+  const handleProjectClick = (project: string) => {
+    console.log("Project clicked:", project);
+    router.push(`/project/?page=${encodeURIComponent(project)}`);
+    
+  }
+
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-slate-800 text-white">
@@ -80,16 +88,18 @@ const Sidebar = () => {
               ) : projects.length > 0 ? (
                 <div id="projects-list" className="space-y-1">
                   {projects.map((project, index) => (
-                    <Link href={`/project/?page=${encodeURIComponent(project)}`} key={index}>
+                   
                       <Button
                         variant="ghost"
                         size="sm"
+                        key={index}
+                        onClick={() => handleProjectClick(project)}
                         className="w-full justify-start pl-4 hover:bg-zinc-400 transition-all duration-150"
                       >
                         <CircleChevronRight className="mr-2 h-5 w-5" />
                         {project}
                       </Button>
-                    </Link>
+                  
                   ))}
                 </div>
               ) : (
