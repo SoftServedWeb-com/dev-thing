@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio, Child};
 use serde_json::Value;
-use tauri::{command, Manager};
+use tauri::{command, Manager, Window};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
@@ -13,10 +13,19 @@ use std::env;
 use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 use tauri::State;
+#[cfg(target_os = "windows")]
+use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::{PROCESS_TERMINATE, HANDLE};
+#[cfg(target_os = "windows")]
+use winapi::um::handleapi::CloseHandle;
+#[cfg(target_os = "windows")]
+use winapi::shared::minwindef::DWORD;
+
+#[cfg(unix)]
 use nix::unistd::Pid;
+#[cfg(unix)]
 use nix::sys::signal::{kill, Signal};
-use nix::sys::wait::waitpid;
-use tauri::Window;
 
 struct ProjectManager(Mutex<HashMap<u32, Child>>);
 
@@ -263,7 +272,7 @@ fn create_project(runtime: &str, framework: &str, project_name: &str, location: 
   }
 }
 
-#[command]
+#[tauri::command]
 fn start_project(
     project_path: String,
     window: tauri::Window,
@@ -279,12 +288,7 @@ fn start_project(
         return Err("Unsupported framework".to_string());
     }
 
-    // Split the command into executable and arguments
-    let mut command_parts = command.split_whitespace();
-    let executable = command_parts.next().ok_or("Failed to parse command")?;
-    let args: Vec<&str> = command_parts.collect();
-
-    // Spawn the child process directly
+    // Spawn the child process
     let mut child = if cfg!(target_os = "windows") {
         Command::new("cmd")
             .args(&["/C", &command])
@@ -293,8 +297,8 @@ fn start_project(
             .stderr(Stdio::piped())
             .spawn()
     } else {
-        Command::new(executable)
-            .args(&args)
+        Command::new("sh")
+            .args(&["-c", &command])
             .current_dir(&project_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -332,20 +336,35 @@ fn start_project(
     Ok(pid)
 }
 
-#[command]
+#[cfg(target_os = "windows")]
+fn terminate_process(pid: u32) -> Result<(), String> {
+    unsafe {
+        let process_handle: HANDLE = OpenProcess(PROCESS_TERMINATE, 0, pid as DWORD);
+        if process_handle.is_null() {
+            return Err("Failed to open process".to_string());
+        }
+
+        if TerminateProcess(process_handle, 1) == 0 {
+            CloseHandle(process_handle);
+            return Err("Failed to terminate process".to_string());
+        }
+
+        CloseHandle(process_handle);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn terminate_process(pid: u32) -> Result<(), String> {
+    kill(Pid::from_raw(pid as i32), Signal::SIGTERM).map_err(|e| e.to_string())
+}
+
+
+#[tauri::command]
 fn close_project(state: State<'_, ProjectManager>, pid: u32) -> Result<(), String> {
     let mut projects = state.0.lock().unwrap();
     if projects.remove(&pid).is_some() {
-        // Send SIGTERM to the entire process group
-        kill(Pid::from_raw(pid as i32), Signal::SIGTERM).map_err(|e| e.to_string())?;
-        
-        // Wait for the process group to exit
-        loop {
-            match waitpid(Pid::from_raw(pid as i32), None) {
-                Ok(_) => break,
-                Err(e) => return Err(e.to_string()),
-            }
-        }
+        terminate_process(pid)?;
     }
     Ok(())
 }

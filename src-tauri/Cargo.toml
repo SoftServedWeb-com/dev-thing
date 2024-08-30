@@ -22,9 +22,14 @@ which = "4.4.1"
 chrono = "0.4.31"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 tokio = { version = "1", features = ["full"] }
-nix = "0.26.4"
 log = "0.4.22"
 env_logger = "0.10.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.26.4"
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3.9"
 
 
 [features]
