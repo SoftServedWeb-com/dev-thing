@@ -16,6 +16,7 @@ use tauri::State;
 use nix::unistd::Pid;
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::waitpid;
+use tauri::Window;
 
 struct ProjectManager(Mutex<HashMap<u32, Child>>);
 
@@ -262,74 +263,6 @@ fn create_project(runtime: &str, framework: &str, project_name: &str, location: 
   }
 }
 
-// #[tauri::command]
-// async fn run_command(
-//     state: State<'_, RunningState>,
-//     window: tauri::Window,
-//     project_path: String,
-//     command: String
-// ) -> Result<CommandStatus, String> {
-//     let mut state_guard = state.lock().map_err(|e| e.to_string())?;
-//     if state_guard.is_some() {
-//         return Err("A command is already running".to_string());
-//     }
-
-//     let cmd = if cfg!(target_os = "windows") {
-//         Command::new("cmd")
-//             .args(&["/C", &command])
-//             .current_dir(&project_path)
-//             .stdout(Stdio::piped())
-//             .stderr(Stdio::piped())
-//             .spawn()
-//     } else {
-//         Command::new("sh")
-//             .arg("-c")
-//             .arg(&command)
-//             .current_dir(&project_path)
-//             .stdout(Stdio::piped())
-//             .stderr(Stdio::piped())
-//             .spawn()
-//     };
-
-//     match cmd {
-//         Ok(mut child) => {
-//             let pid = child.id();
-//             let stdout = child.stdout.take().unwrap();
-//             let stderr = child.stderr.take().unwrap();
-
-//             *state_guard = Some((child, pid));
-//             drop(state_guard);
-
-//             let state_clone = Arc::clone(&state);
-//             tauri::async_runtime::spawn(async move {
-//                 let stdout_reader = BufReader::new(stdout);
-//                 let stderr_reader = BufReader::new(stderr);
-
-//                 for line in stdout_reader.lines().chain(stderr_reader.lines()) {
-//                     if let Ok(line) = line {
-//                         let _ = window.emit("command_output", &line);
-//                     }
-//                     if state_clone.lock().unwrap().is_none() {
-//                         break;
-//                     }
-//                 }
-
-//                 let mut state_guard = state_clone.lock().unwrap();
-//                 if let Some((child, _)) = state_guard.as_mut() {
-//                     let _ = child.wait();
-//                 }
-//                 *state_guard = None;
-//                 let _ = window.emit("command_finished", CommandStatus { is_running: false, pid: None });
-//             });
-
-//             Ok(CommandStatus { is_running: true, pid: Some(pid) })
-//         }
-//         Err(e) => {
-//             Err(e.to_string())
-//         }
-//     }
-// }
-
 #[command]
 fn start_project(
     project_path: String,
@@ -417,7 +350,197 @@ fn close_project(state: State<'_, ProjectManager>, pid: u32) -> Result<(), Strin
     Ok(())
 }
 
+#[command]
+fn install_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+    version: Option<String>,
+) -> Result<(), String> {
+    let versioned_dependency = if let Some(ver) = version {
+        format!("{}@{}", dependency, ver)
+    } else {
+        dependency
+    };
+    let cmd = match runtime.as_str() {
+        "pnpm" => format!("pnpm add {}", versioned_dependency),
+        "npm" => format!("npm install {}", versioned_dependency),
+        "yarn" => format!("yarn add {}", versioned_dependency),
+        "bun" => format!("bun add {}", versioned_dependency),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("install_status", "Installing dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} installed successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("install_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Installation failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("install_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("install_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
 
+#[command]
+fn update_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+    version: Option<String>,
+) -> Result<(), String> {
+    let cmd = if let Some(ver) = version {
+        match runtime.as_str() {
+            "pnpm" => format!("pnpm add {}@{}", dependency, ver),
+            "npm" => format!("npm install {}@{}", dependency, ver),
+            "yarn" => format!("yarn add {}@{}", dependency, ver),
+            "bun" => format!("bun add {}@{}", dependency, ver),
+            _ => return Err("Unsupported runtime".to_string()),
+        }
+    } else {
+        match runtime.as_str() {
+            "pnpm" => format!("pnpm update {}", dependency),
+            "npm" => format!("npm update {}", dependency),
+            "yarn" => format!("yarn upgrade {}", dependency),
+            "bun" => format!("bun update {}", dependency),
+            _ => return Err("Unsupported runtime".to_string()),
+        }
+    };
+
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("update_status", "Updating dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} updated successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("update_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Update failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("update_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("update_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
+
+#[command]
+fn delete_dependency(
+    window: Window,
+    project_path: String,
+    runtime: String,
+    dependency: String,
+) -> Result<(), String> {
+    let cmd = match runtime.as_str() {
+        "pnpm" => format!("pnpm remove {}", dependency),
+        "npm" => format!("npm uninstall {}", dependency),
+        "yarn" => format!("yarn remove {}", dependency),
+        "bun" => format!("bun remove {}", dependency),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("delete_status", "Deleting dependency...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("{} deleted successfully!", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("delete_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("{} Deletion failed. Exit code: {}. Check stdout for details.", message, output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("delete_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("delete_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
 
 fn main() {
     // Initialize the state
@@ -434,7 +557,9 @@ fn main() {
             analyze_project,
             start_project,
             close_project,
-            
+            install_dependency,
+            update_dependency,
+            delete_dependency,
         ])
         .setup(|app| {
             // Create the "Local Projects" folder on startup
