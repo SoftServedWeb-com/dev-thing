@@ -26,27 +26,41 @@ import {
 } from "@/components/ui/alert-dialog"
 import { listen } from '@tauri-apps/api/event';
 
-const vsCodeLaunch = async (projectId: string) => {
+
+const ideLaunch = async (projectId: string, platform: string,ide: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
   console.log(allProjectPath);
   if (allProjectPath) {
-    const projectPath = allProjectPath + '/' + projectId;
-    await invoke("launch_vscode", { projectPath });
+    let projectPath;
+    
+    if (platform === 'win32') {
+       projectPath = allProjectPath + '\\' + projectId;
+    } else {
+       projectPath = allProjectPath + '/' + projectId;
+    }
+    console.log("projectPath in ideLaunch", projectPath,ide)
+    await invoke("launch_ide", { projectPath,ide });
   }
 };
 
-const explorerLaunch = async (projectId: string) => {
+const explorerLaunch = async (projectId: string, platform: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
   console.log(allProjectPath);
   if (allProjectPath) {
-    const projectPath = `${allProjectPath}/${projectId}/`;
+    let projectPath;
+    
+    if (platform === 'win32') {
+      projectPath = allProjectPath + '\\' + projectId;
+    } else {
+      projectPath = allProjectPath + '/' + projectId;
+    }
     await invoke("open_file_explorer", { projectPath });
   }
 };
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('overview');
-  const { projectName, isRunning, pid, setIsRunning, setPid, projectInfo, error, terminalOutput, setTerminalOutput, appendTerminalOutput, resetTerminalOutput } = useProjectAnalyzer();
+  const { projectName, isRunning, pid, setIsRunning, setPid, projectInfo, error, terminalOutput, setTerminalOutput, appendTerminalOutput, resetTerminalOutput, platform } = useProjectAnalyzer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false); // State for update dialog
   const [selectedDependency, setSelectedDependency] = useState<string | null>(null); // Manage selected dependency
@@ -64,7 +78,13 @@ export default function Page() {
   const localHostLaunch = async () => {
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath) {
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setActiveTab('terminal');
         resetTerminalOutput(); // Reset terminal output before starting
@@ -101,7 +121,13 @@ export default function Page() {
     console.log('Adding dependency:', name, version);
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath && projectInfo) { // Add null check for projectInfo
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setIsDialogOpen(false); // Close the dialog
         setActiveTab('terminal');
@@ -134,7 +160,13 @@ export default function Page() {
     console.log(`Updating dependency: ${name} to version ${version}`);
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath && projectInfo) { // Add null check for projectInfo
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setIsUpdateDialogOpen(false); // Close the dialog
         setActiveTab('terminal');
@@ -172,7 +204,13 @@ export default function Page() {
       console.log(`Deleting dependency: ${dependencyToDelete}`);
       const allProjectPath = localStorage.getItem('projectsPath');
       if (allProjectPath && projectInfo) { // Add null check for projectInfo
-        const projectPath = `${allProjectPath}/${projectName}`;
+        let projectPath;
+        
+        if (platform === 'win32') {
+          projectPath = allProjectPath + '\\' + projectName;
+        } else {
+          projectPath = allProjectPath + '/' + projectName;
+        }
         try {
           setIsDeleteDialogOpen(false); // Close the dialog
           setActiveTab('terminal');
@@ -251,7 +289,7 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => explorerLaunch(projectName as string)}
+              onClick={() => explorerLaunch(projectName as string, platform as string)}
               className="text-purple-400 hover:underline"
             >
               Go to Site Folder
@@ -260,10 +298,19 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => vsCodeLaunch(projectName as string)}
+              onClick={() => ideLaunch(projectName as string, platform as string, "code")}
               className="text-purple-400 hover:underline"
             >
               VS Code
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="#"
+              onClick={() => ideLaunch(projectName as string, platform as string, "cursor")}
+              className="text-purple-400 hover:underline"
+            >
+              Cursor IDE
             </Link>
           </li>
         </ul>

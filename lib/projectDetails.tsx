@@ -3,6 +3,8 @@ import React, { createContext, useState, useEffect, useContext, ReactNode, Suspe
 import { invoke } from '@tauri-apps/api/tauri';
 import { useSearchParams } from 'next/navigation';
 import { listen } from '@tauri-apps/api/event';
+import { os } from "@tauri-apps/api";
+import { useProjects } from "./useProject";
 
 interface ProjectInfo {
   framework: string;
@@ -22,11 +24,13 @@ interface ProjectAnalyzerContextType {
   setTerminalOutput: (output: string) => void;
   appendTerminalOutput: (output: string) => void;
   resetTerminalOutput: () => void;
+  platform: string | null;
 }
 
 const ProjectAnalyzerContext = createContext<ProjectAnalyzerContextType | undefined>(undefined);
 
 export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) => {
+  const { platform } = useProjects();
   const searchParams = useSearchParams();
   const projectNameFromURL = searchParams.get('page') || '';
   const [projectName, setProjectName] = useState<string>(projectNameFromURL);
@@ -60,7 +64,15 @@ export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) =
         const storedTerminalOutput = localStorage.getItem(`${projectNameFromURL}_terminalOutput`);
 
         if (allProjectPath) {
-          const projectPath = `${allProjectPath}/${projectNameFromURL}`;
+          let projectPath;
+          
+          if (platform === 'win32') {
+            projectPath = `${allProjectPath}\\${projectNameFromURL}`;
+          } else {
+            console.log("Platform", platform)
+            projectPath = `${allProjectPath}/${projectNameFromURL}`;
+          }
+          console.log("Projects Path", projectPath)
           try {
             const result = await invoke<ProjectInfo>('analyze_project', { path: projectPath });
             setProjectInfo(result);
@@ -128,6 +140,7 @@ export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) =
     setTerminalOutput,
     appendTerminalOutput,
     resetTerminalOutput,
+    platform
   };
 
   return (
