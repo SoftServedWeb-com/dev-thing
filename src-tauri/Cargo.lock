@@ -73,6 +73,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "shlex",
  "tauri",
  "tauri-build",
  "tokio",

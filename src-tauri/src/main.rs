@@ -28,6 +28,19 @@ use nix::unistd::Pid;
 #[cfg(unix)]
 use nix::sys::signal::{kill, Signal};
 
+use shlex::Shlex;
+
+fn parse_command(command: &str) -> Result<(String, Vec<String>), String> {
+    let mut lexer = Shlex::new(command);
+    let mut parts = lexer.collect::<Vec<String>>();
+    let executable = parts
+        .get(0)
+        .ok_or("Failed to parse command")?
+        .to_string();
+    let args = parts.split_off(1);
+    Ok((executable, args))
+}
+
 struct ProjectManager(Mutex<HashMap<u32, Child>>);
 
 
@@ -71,28 +84,28 @@ fn detect_framework(package_json: &Value, path: &str) -> (String, String) {
     if package_json["dependencies"].get("next").is_some() {
         let path_to_dev;
         if cfg!(target_os = "windows") {
-            path_to_dev = format!("{}\\node_modules\\next\\dist\\bin\\next dev", path)
+            path_to_dev = format!("\"{}\\node_modules\\next\\dist\\bin\\next\" dev", path)
         }
         else {
-            path_to_dev = format!("{}/node_modules/next/dist/bin/next dev", path)
+            path_to_dev = format!("\"{}/node_modules/next/dist/bin/next\" dev", path)
         }
         ("Next.js".to_string(), format!("node {}", path_to_dev).to_string())
     } else if package_json["dependencies"].get("react").is_some() {
         let path_to_dev;
         if cfg!(target_os = "windows") {
-            path_to_dev = format!("{}\\node_modules\\react-scripts\\scripts\\start.js", path)
+            path_to_dev = format!("\"{}\\node_modules\\react-scripts\\scripts\\start.js\"", path)
         }
         else {
-            path_to_dev = format!("{}/node_modules/react-scripts/scripts/start.js", path)
+            path_to_dev = format!("\"{}/node_modules/react-scripts/scripts/start.js\"", path)
         }
         ("React".to_string(), format!("node {}", path_to_dev).to_string())
     } else if package_json["dependencies"].get("vue").is_some() {
         let path_to_dev;
         if cfg!(target_os = "windows") {
-            path_to_dev = format!("{}\\node_modules\\vue-cli-service\\bin\\vue-cli-service.js", path)
+            path_to_dev = format!("\"{}\\node_modules\\vue-cli-service\\bin\\vue-cli-service.js\"", path)
         }
         else {
-            path_to_dev = format!("{}/node_modules/vue-cli-service/bin/vue-cli-service.js", path)
+            path_to_dev = format!("\"{}/node_modules/vue-cli-service/bin/vue-cli-service.js\"", path)
         }
         ("Vue.js".to_string(), format!("node {}", path_to_dev).to_string())
     } else {
@@ -230,42 +243,30 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
         
         let cmd = match (runtime.as_str(), framework.as_str()) {
             ("pnpm", "next.js") => {
-                if cfg!(target_os = "windows") {
-                    
-                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                } else {
-                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                }
+                vec!["pnpm", "dlx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("npm", "next.js") => {
-                if cfg!(target_os = "windows") {
-                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                } else {
-                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                }
+                vec!["npx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("bun", "next.js") => {
-                if cfg!(target_os = "windows") {
-                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                } else {
-                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
-                }
+                vec!["bunx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             _ => {
                 window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
                 return;
             }
         };
-
+        println!("Command: {:?}", cmd);
         let output = if cfg!(target_os = "windows") {
             Command::new("cmd")
-                .args(&["/C", &cmd])
+                .arg("/C")
+                .args(&cmd)
                 .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
             Command::new("sh")
                 .arg("-c")
-                .arg(&cmd)
+                .args(&cmd)
                 .output()
         };
 
@@ -327,9 +328,7 @@ fn start_project(
         return Err("Unsupported framework".to_string());
     }
 
-    let mut command_parts = command.split_whitespace();
-    let executable = command_parts.next().ok_or("Failed to parse command")?;
-    let args: Vec<&str> = command_parts.collect();
+    let (executable, args) = parse_command(&command)?;
 
     println!("Command: {}", command);
     // Spawn the child process
@@ -356,7 +355,11 @@ fn start_project(
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
     
+    // ... existing code ...
+    println!("stdout: {:?}", stdout);
+    println!("stderr: {:?}", stderr);
     let window_clone = window.clone();
+// ... existing code ...
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
