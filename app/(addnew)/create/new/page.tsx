@@ -119,7 +119,7 @@ const NewSitePage = () => {
           Choose Runtime
         </Label>
         <div className="flex gap-4">
-          {["npm", "pnpm"].map((r) => (
+          {[ "pnpm"].map((r) => (
             <Button
               key={r}
               onClick={() => setRuntime(r)}

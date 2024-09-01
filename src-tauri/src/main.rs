@@ -6,8 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio, Child};
 use serde_json::Value;
-use tauri::utils::platform;
-use tauri::{command, Manager, Window};
+use tauri::{command, Window};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
@@ -220,11 +219,11 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn start_project_creation(window: tauri::Window, runtime: String, framework: String, project_name: String, location: String) -> Result<(), String> {
-    let createPath;
+    let create_path;
     if cfg!(target_os = "windows") {
-         createPath = format!("{}\\{}", location, project_name);
+         create_path = format!("{}\\{}", location, project_name);
     } else {
-         createPath = format!("{}/{}", location, project_name);
+         create_path = format!("{}/{}", location, project_name);
     }
     thread::spawn(move || {
         window.emit("creation_status", "Starting project creation...").unwrap();
@@ -233,23 +232,23 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
             ("pnpm", "next.js") => {
                 if cfg!(target_os = "windows") {
                     
-                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 } else {
-                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 }
             }
             ("npm", "next.js") => {
                 if cfg!(target_os = "windows") {
-                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 } else {
-                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 }
             }
             ("bun", "next.js") => {
                 if cfg!(target_os = "windows") {
-                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 } else {
-                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", createPath)
+                    format!("bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
                 }
             }
             _ => {
@@ -628,6 +627,64 @@ fn update_project_path(new_path: String) -> Result<String, String> {
     Ok(projects_path.to_str().unwrap().to_string())
 }
 
+#[command]
+fn reinstall_dependencies(
+    window: Window,
+    project_path: String,
+    runtime: String,
+) -> Result<(), String> {
+    let cmd = match runtime.as_str() {
+        "pnpm" => "pnpm install".to_string(),
+        "npm" => "npm install".to_string(),
+        "yarn" => "yarn install".to_string(),
+        "bun" => "bun install".to_string(),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("reinstall_status", "Reinstalling dependencies...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("Dependencies reinstalled successfully!\n{}", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("reinstall_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("Reinstallation failed. Exit code: {}. Check stdout for details.", output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("reinstall_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("reinstall_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
+
 fn main() {
     // Initialize the state
     let _ = fix_path_env::fix();
@@ -646,8 +703,9 @@ fn main() {
             update_dependency,
             delete_dependency,
             update_project_path,
+            reinstall_dependencies,
         ])
-        .setup(|app| 
+        .setup(|_app| 
             Ok(())
         )
         .run(tauri::generate_context!())

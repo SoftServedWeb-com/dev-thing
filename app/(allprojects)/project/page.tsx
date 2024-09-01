@@ -260,12 +260,47 @@ export default function Page() {
     } catch (error) {
       console.error('Error stopping command:', error);
       appendTerminalOutput(`Error stopping command: ${error}`);
+      appendTerminalOutput(`Looks like the process it terminated`);
+      localStorage.removeItem(`${projectName}_terminalOutput`);
+      localStorage.removeItem(projectName as string);
     }
   };
   
   const filteredPackages = projectInfo?.packages.filter(pkg =>
     pkg.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleReinstallDependencies = async () => {
+    const allProjectPath = localStorage.getItem('projectsPath');
+    if (allProjectPath && projectInfo) { // Add null check for projectInfo
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
+      try {
+        setActiveTab('terminal');
+        resetTerminalOutput(); // Reset terminal output before starting
+        await invoke('reinstall_dependencies', { projectPath, runtime: projectInfo.runtime });
+      } catch (error) {
+        console.error('Error reinstalling dependencies:', error);
+        appendTerminalOutput(`Error reinstalling dependencies: ${error}`);
+      }
+    }
+  };
+
+  // Listen for reinstall status updates
+  useEffect(() => {
+    const unlisten = listen<string>('reinstall_status', (event) => {
+      appendTerminalOutput(event.payload);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen">
@@ -353,47 +388,56 @@ export default function Page() {
           </div>
         )}
 
-        {activeTab === 'packages' && (
-          <div>
-            <div className="flex flex-col md:flex-row justify-between items-center mb-4">
-              <Button
-                onClick={handleAddDependency}
-                className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Add Dependency
-              </Button>
-              <div className="flex items-center relative mt-4 md:mt-0">
-                <Search className="absolute left-3 w-5 h-5 text-gray-500" />
-                <Input
-                  type="search"
-                  placeholder="Search packages"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
-                />
-              </div>
-            </div>
-            <div className="h-96 overflow-y-auto">
-              {filteredPackages && (
-                <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-                  <div className="space-y-6">
-                    {filteredPackages.map((pkg, index) => (
-                      <DetailRow
-                        key={index}
-                        label={pkg.name}
-                        value={pkg.version}
-                        updateButton={true} // Show the update button
-                        onUpdate={() => openUpdateDialog(pkg.name)}  // Pass the update function
-                        onDelete={() => handleDeleteDependency(pkg.name)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+{activeTab === 'packages' && (
+  <div>
+    <div className="flex flex-col md:flex-row justify-between items-center mb-4">
+      <div className="flex space-x-2 mb-4 md:mb-0">
+        <Button
+          onClick={handleAddDependency}
+          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Add Package
+        </Button>
+        <Button
+          onClick={handleReinstallDependencies}
+          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+        >
+          Reinstall Packages
+        </Button>
+      </div>
+      <div className="flex items-center relative w-full md:w-auto">
+        <Search className="absolute left-3 w-5 h-5 text-gray-500" />
+        <Input
+          type="search"
+          placeholder="Search packages"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
+        />
+      </div>
+    </div>
+    <div className="h-96 overflow-y-auto">
+      {filteredPackages && (
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+          <div className="space-y-6">
+            {filteredPackages.map((pkg, index) => (
+              <DetailRow
+                key={index}
+                label={pkg.name}
+                value={pkg.version}
+                updateButton={true}
+                onUpdate={() => openUpdateDialog(pkg.name)}
+                onDelete={() => handleDeleteDependency(pkg.name)}
+              />
+            ))}
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  </div>
+)}
+        
         <UpdateDependencyDialog
           isOpen={isUpdateDialogOpen}
           onClose={closeUpdateDialog}
