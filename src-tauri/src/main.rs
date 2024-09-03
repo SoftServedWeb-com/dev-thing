@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt; // Add this import for Windows-specific extensions
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,7 +32,7 @@ use nix::sys::signal::{kill, Signal};
 use shlex::Shlex;
 
 fn parse_command(command: &str) -> Result<(String, Vec<String>), String> {
-    let mut lexer = Shlex::new(command);
+    let lexer = Shlex::new(command);
     let mut parts = lexer.collect::<Vec<String>>();
     let executable = parts
         .get(0)
@@ -165,11 +166,15 @@ fn launch_ide(project_path: String, ide: String) -> Result<(), String> {
 
     match os {
         "windows" => {
-            Command::new("cmd")
-                .args(&["/C", &ide, &project_path])
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
-                .spawn()
-                .map_err(|e| format!("Failed to launch {}: {}", ide, e))?;
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("cmd")
+                    .args(&["/C", &ide, &project_path])
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch {}: {}", ide, e))?;
+            }       
+            
         },
         "macos" | "linux" => {
             Command::new(&ide)
@@ -191,11 +196,14 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
     
     match os {
         "windows" => {
-            Command::new("explorer")
-                .arg(&project_path)
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("explorer")
+                    .arg(&project_path)
                 .creation_flags(0x08000000) // CREATE_NO_WINDOW
-                .spawn()
-                .map_err(|e| format!("Failed to open file explorer: {}", e))?;
+                    .spawn()
+                    .map_err(|e| format!("Failed to open file explorer: {}", e))?;
+            }
         },
         "macos" => {
             Command::new("open")
@@ -256,26 +264,45 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
                 return;
             }
         };
-        println!("Command: {:?}", cmd);
+        let cmd2 = match (runtime.as_str(), framework.as_str()) {
+            ("pnpm", "next.js") => {
+                format!("pnpm dlx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            ("npm", "next.js") => {
+                format!("npx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            ("bun", "next.js") => {
+                format!("bunx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            _ => {
+                window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
+                return;
+            }
+        };
+        println!("Command: {:?}", cmd2);
         let output = if cfg!(target_os = "windows") {
             Command::new("cmd")
                 .arg("/C")
                 .args(&cmd)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
+            
             Command::new("sh")
                 .arg("-c")
-                .args(&cmd)
+                .arg(&cmd2)
                 .output()
         };
-
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 if output.status.success() {
                     window.emit("creation_status", "Project created successfully!").unwrap();
                 } else {
                     let error_message = String::from_utf8_lossy(&output.stderr);
+                    println!("Error: {:?}", output.stderr);
                     window.emit("creation_status", format!("Error: {}", error_message)).unwrap();
                 }
             },
@@ -332,22 +359,17 @@ fn start_project(
 
     println!("Command: {}", command);
     // Spawn the child process
-    let mut child = if cfg!(target_os = "windows") {
-        Command::new(executable)
-            .args(&args)
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .current_dir(&project_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    } else {
+    let mut child = 
         Command::new(executable)
             .args(&args)
             .current_dir(&project_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-    }.map_err(|e| e.to_string())?;
+            .spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        child.creation_flags(0x08000000) // CREATE_NO_WINDOW
+    }
 
     let pid = child.id();
 
@@ -446,7 +468,6 @@ fn install_dependency(
             Command::new("cmd")
                 .args(&["/C", &cmd])
                 .current_dir(&project_path)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
             Command::new("sh")
@@ -455,6 +476,10 @@ fn install_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -517,7 +542,6 @@ fn update_dependency(
             Command::new("cmd")
                 .args(&["/C", &cmd])
                 .current_dir(&project_path)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
             Command::new("sh")
@@ -526,6 +550,10 @@ fn update_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -576,7 +604,6 @@ fn delete_dependency(
             Command::new("cmd")
                 .args(&["/C", &cmd])
                 .current_dir(&project_path)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
             Command::new("sh")
@@ -585,6 +612,10 @@ fn delete_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -637,10 +668,10 @@ fn reinstall_dependencies(
     runtime: String,
 ) -> Result<(), String> {
     let cmd = match runtime.as_str() {
-        "pnpm" => "pnpm install".to_string(),
-        "npm" => "npm install".to_string(),
-        "yarn" => "yarn install".to_string(),
-        "bun" => "bun install".to_string(),
+        "pnpm" => "pnpm install --force".to_string(),
+        "npm" => "npm install --force".to_string(),
+        "yarn" => "yarn install --force".to_string(),
+        "bun" => "bun install --force".to_string(),
         _ => return Err("Unsupported runtime".to_string()),
     };
     println!("Executing command: {}", cmd);
@@ -650,7 +681,6 @@ fn reinstall_dependencies(
             Command::new("cmd")
                 .args(&["/C", &cmd])
                 .current_dir(&project_path)
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output()
         } else {
             Command::new("sh")
@@ -659,6 +689,10 @@ fn reinstall_dependencies(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -690,7 +724,7 @@ fn reinstall_dependencies(
 
 fn main() {
     // Initialize the state
-    let _ = fix_path_env::fix();
+    // let _ = fix_path_env::fix();
     tauri::Builder::default()
         .manage(ProjectManager(Mutex::new(HashMap::new()))) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
