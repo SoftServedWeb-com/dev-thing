@@ -30,6 +30,10 @@ use nix::unistd::Pid;
 use nix::sys::signal::{kill, Signal};
 
 use shlex::Shlex;
+mod node_manager;
+use node_manager::check_node_installed;
+use node_manager::check_nvm_installed;
+
 
 fn parse_command(command: &str) -> Result<(String, Vec<String>), String> {
     let lexer = Shlex::new(command);
@@ -724,7 +728,7 @@ fn reinstall_dependencies(
 
 fn main() {
     // Initialize the state
-    // let _ = fix_path_env::fix();
+    let _ = fix_path_env::fix();
     tauri::Builder::default()
         .manage(ProjectManager(Mutex::new(HashMap::new()))) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
@@ -740,7 +744,9 @@ fn main() {
             update_dependency,
             delete_dependency,
             update_project_path,
-            reinstall_dependencies,
+            reinstall_dependencies,     
+            check_node_installed,
+            check_nvm_installed,        
         ])
         .setup(|_app| 
             Ok(())

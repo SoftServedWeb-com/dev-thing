@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 
 
 const Sidebar = () => {
-  const { projects, error } = useProjects();
+  const { projects, error, onboard } = useProjects();
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
 
@@ -26,7 +26,7 @@ const Sidebar = () => {
     router.push(`/project/?page=${encodeURIComponent(project)}`);
   }
 
-  if (projects.length === 0) {
+  if (projects.length === 0 || onboard) {
     return null;
   }
 

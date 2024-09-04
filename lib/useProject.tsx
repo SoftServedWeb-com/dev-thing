@@ -8,11 +8,20 @@ interface ProjectsContextType {
   projects: string[];
   error: string | null;
   platform: string | null;
+  onboard: boolean;
+  setOnboard: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const ProjectsContext = createContext<ProjectsContextType | undefined>(undefined);
 
 export const ProjectsProvider = ({ children }: { children: ReactNode }) => {
+  const [onboard, setOnboard] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const storedOnboard = localStorage.getItem('onboard');
+      return storedOnboard ? JSON.parse(storedOnboard) : false;
+    }
+    return false;
+  });
   const [projectsPath, setProjectsPath] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const storedPath = localStorage.getItem("projectsPath");
@@ -66,7 +75,7 @@ export const ProjectsProvider = ({ children }: { children: ReactNode }) => {
     return null; // or a loading spinner, or some other placeholder
   }
   return (
-    <ProjectsContext.Provider value={{ projectsPath, setProjectsPath, projects, error, platform }}>
+    <ProjectsContext.Provider value={{ projectsPath, setProjectsPath, projects, error, platform, onboard, setOnboard }}>
       {children}
     </ProjectsContext.Provider>
   );

@@ -7,11 +7,12 @@ import { open } from "@tauri-apps/api/dialog";
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { invoke } from '@tauri-apps/api/tauri';
+import { CloudCog } from "lucide-react";
 
 
 
 const DashboardPage = () => {
-  const { projects, error,platform } = useProjects();
+  const { projects, error, platform } = useProjects();
   const [loading, setLoading] = useState(true);
   const [projectsPath, setProjectsPath] = useState<string | null>(null);
   const [existingFolder, setExistingFolder] = useState<string>('');
@@ -20,17 +21,42 @@ const DashboardPage = () => {
   const [showNewFolderInput, setShowNewFolderInput] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState<string>('');
+  const [onboard, setOnboard] = useState<boolean>(false);
   const router = useRouter();
+  const [nvm, setNvm] = useState<boolean>(false);
+  const [nodeInstalled, setNodeInstalled] = useState<boolean>(false);
 
+  // Load projects path and onboard state from local storage on mount
   useEffect(() => {
     const storedProjectsPath = localStorage.getItem('projectsPath');
+    const storedOnboard = localStorage.getItem('onboard');
+    const nvm = localStorage.getItem('nvm');
+    const nodeInstalled = localStorage.getItem('nodeInstalled');
+    
     if (storedProjectsPath) {
       setProjectsPath(storedProjectsPath);
-      
     }
-    console.log('projectsPath', projectsPath);
-    setLoading(false);
+    if (storedOnboard) {
+      setOnboard(JSON.parse(storedOnboard));
+    }
+    if (nvm) {
+      setNvm(JSON.parse(nvm));
+    }
+    if (nodeInstalled) {
+      setNodeInstalled(JSON.parse(nodeInstalled));
+    }
+    console.log(nvm, nodeInstalled, onboard);
+    // if nvm or node is not installed and onboard is completed, redirect to setup
+    
   }, []);
+
+  useEffect(() => {
+    if ((nvm !== true || nodeInstalled !== true) && onboard) {
+      router.replace('/setup');
+    } else {
+      setLoading(false);
+    }
+  }, [nvm, nodeInstalled, onboard, router]);
 
   const handleExistingFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setExistingFolder(event.target.value);
@@ -53,13 +79,9 @@ const DashboardPage = () => {
       });
       if (selectedLocation) {
         let formattedLocation = selectedLocation as string;
-        
-        
         if (platform === 'win32') {
           formattedLocation = formattedLocation.replace(/\//g, '\\\\');
-          console.log('formattedLocation', formattedLocation);
         } else {
-          console.log('formattedLocation not on windows', formattedLocation);
           formattedLocation = formattedLocation.replace(/\\/g, '/');
         }
         setExistingFolder(formattedLocation);
@@ -79,8 +101,6 @@ const DashboardPage = () => {
       });
       if (selectedLocation) {
         let formattedLocation = selectedLocation as string;
-        
-      
         if (platform === 'win32') {
           formattedLocation = formattedLocation.replace(/\//g, '\\\\');
         } else {
@@ -108,9 +128,7 @@ const DashboardPage = () => {
     }
 
     if (projectPath) {
-      console.log(projectPath);
       localStorage.setItem('projectsPath', projectPath);
-      
       if (showNewFolderInput && newProjectName) {
         try {
           const createdPath = await invoke('create_local_projects_folder', {
@@ -122,8 +140,6 @@ const DashboardPage = () => {
           console.error(`Failed to create folder: ${error}`);
         }
       }
-      
-      // Fallback to window.location.reload() if router.refresh() doesn't work
       window.location.reload();
     }
   };
@@ -135,6 +151,12 @@ const DashboardPage = () => {
     setNewProjectName('');
   };
 
+  const handleGetStarted = () => {
+    setOnboard(true);
+    localStorage.setItem('onboard', 'true');
+    router.replace('/setup');
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-purple-200">
@@ -143,7 +165,21 @@ const DashboardPage = () => {
     );
   }
 
-  return !projectsPath ? (
+  if (!onboard) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-purple-200">
+        <h1 className="text-4xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">Welcome to Local Node</h1>
+        <Button 
+          onClick={handleGetStarted} 
+          className="mt-8 px-8 py-3 bg-gradient-to-r from-purple-600 to-purple-800 text-white rounded-lg shadow-lg hover:from-purple-700 hover:to-purple-900 transition-all transform hover:scale-105"
+        >
+          Get Started
+        </Button>
+      </div>
+    );
+  }
+
+  return !projectsPath || !nodeInstalled || !nvm ? (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-purple-200 p-6">
     <h1 className="text-4xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">Welcome to Local</h1>
     <Tabs defaultValue="existing" className="w-full max-w-md bg" onValueChange={handleTabChange}>
@@ -231,7 +267,6 @@ const DashboardPage = () => {
       ) : (
         <>
           <h1 className="text-3xl font-bold mb-6">Pick a Project from Sidebar</h1>
-          
         </>
       )}
     </div>
