@@ -26,27 +26,41 @@ import {
 } from "@/components/ui/alert-dialog"
 import { listen } from '@tauri-apps/api/event';
 
-const vsCodeLaunch = async (projectId: string) => {
+
+const ideLaunch = async (projectId: string, platform: string,ide: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
   console.log(allProjectPath);
   if (allProjectPath) {
-    const projectPath = allProjectPath + '/' + projectId;
-    await invoke("launch_vscode", { projectPath });
+    let projectPath;
+    
+    if (platform === 'win32') {
+       projectPath = allProjectPath + '\\' + projectId;
+    } else {
+       projectPath = allProjectPath + '/' + projectId;
+    }
+    console.log("projectPath in ideLaunch", projectPath,ide)
+    await invoke("launch_ide", { projectPath,ide });
   }
 };
 
-const explorerLaunch = async (projectId: string) => {
+const explorerLaunch = async (projectId: string, platform: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
   console.log(allProjectPath);
   if (allProjectPath) {
-    const projectPath = `${allProjectPath}/${projectId}/`;
+    let projectPath;
+    
+    if (platform === 'win32') {
+      projectPath = allProjectPath + '\\' + projectId;
+    } else {
+      projectPath = allProjectPath + '/' + projectId;
+    }
     await invoke("open_file_explorer", { projectPath });
   }
 };
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('overview');
-  const { projectName, isRunning, pid, setIsRunning, setPid, projectInfo, error, terminalOutput, setTerminalOutput, appendTerminalOutput, resetTerminalOutput } = useProjectAnalyzer();
+  const { projectName, isRunning, pid, setIsRunning, setPid, projectInfo, error, terminalOutput, setTerminalOutput, appendTerminalOutput, resetTerminalOutput, platform } = useProjectAnalyzer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false); // State for update dialog
   const [selectedDependency, setSelectedDependency] = useState<string | null>(null); // Manage selected dependency
@@ -64,7 +78,13 @@ export default function Page() {
   const localHostLaunch = async () => {
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath) {
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setActiveTab('terminal');
         resetTerminalOutput(); // Reset terminal output before starting
@@ -101,7 +121,13 @@ export default function Page() {
     console.log('Adding dependency:', name, version);
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath && projectInfo) { // Add null check for projectInfo
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setIsDialogOpen(false); // Close the dialog
         setActiveTab('terminal');
@@ -134,7 +160,13 @@ export default function Page() {
     console.log(`Updating dependency: ${name} to version ${version}`);
     const allProjectPath = localStorage.getItem('projectsPath');
     if (allProjectPath && projectInfo) { // Add null check for projectInfo
-      const projectPath = `${allProjectPath}/${projectName}`;
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
       try {
         setIsUpdateDialogOpen(false); // Close the dialog
         setActiveTab('terminal');
@@ -172,7 +204,13 @@ export default function Page() {
       console.log(`Deleting dependency: ${dependencyToDelete}`);
       const allProjectPath = localStorage.getItem('projectsPath');
       if (allProjectPath && projectInfo) { // Add null check for projectInfo
-        const projectPath = `${allProjectPath}/${projectName}`;
+        let projectPath;
+        
+        if (platform === 'win32') {
+          projectPath = allProjectPath + '\\' + projectName;
+        } else {
+          projectPath = allProjectPath + '/' + projectName;
+        }
         try {
           setIsDeleteDialogOpen(false); // Close the dialog
           setActiveTab('terminal');
@@ -222,12 +260,47 @@ export default function Page() {
     } catch (error) {
       console.error('Error stopping command:', error);
       appendTerminalOutput(`Error stopping command: ${error}`);
+      appendTerminalOutput(`Looks like the process it terminated`);
+      localStorage.removeItem(`${projectName}_terminalOutput`);
+      localStorage.removeItem(projectName as string);
     }
   };
   
   const filteredPackages = projectInfo?.packages.filter(pkg =>
     pkg.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleReinstallDependencies = async () => {
+    const allProjectPath = localStorage.getItem('projectsPath');
+    if (allProjectPath && projectInfo) { // Add null check for projectInfo
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
+      try {
+        setActiveTab('terminal');
+        resetTerminalOutput(); // Reset terminal output before starting
+        await invoke('reinstall_dependencies', { projectPath, runtime: projectInfo.runtime });
+      } catch (error) {
+        console.error('Error reinstalling dependencies:', error);
+        appendTerminalOutput(`Error reinstalling dependencies: ${error}`);
+      }
+    }
+  };
+
+  // Listen for reinstall status updates
+  useEffect(() => {
+    const unlisten = listen<string>('reinstall_status', (event) => {
+      appendTerminalOutput(event.payload);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen">
@@ -251,7 +324,7 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => explorerLaunch(projectName as string)}
+              onClick={() => explorerLaunch(projectName as string, platform as string)}
               className="text-purple-400 hover:underline"
             >
               Go to Site Folder
@@ -260,10 +333,19 @@ export default function Page() {
           <li>
             <Link
               href="#"
-              onClick={() => vsCodeLaunch(projectName as string)}
+              onClick={() => ideLaunch(projectName as string, platform as string, "code")}
               className="text-purple-400 hover:underline"
             >
               VS Code
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="#"
+              onClick={() => ideLaunch(projectName as string, platform as string, "cursor")}
+              className="text-purple-400 hover:underline"
+            >
+              Cursor IDE
             </Link>
           </li>
         </ul>
@@ -306,47 +388,56 @@ export default function Page() {
           </div>
         )}
 
-        {activeTab === 'packages' && (
-          <div>
-            <div className="flex flex-col md:flex-row justify-between items-center mb-4">
-              <Button
-                onClick={handleAddDependency}
-                className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Add Dependency
-              </Button>
-              <div className="flex items-center relative mt-4 md:mt-0">
-                <Search className="absolute left-3 w-5 h-5 text-gray-500" />
-                <Input
-                  type="search"
-                  placeholder="Search packages"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
-                />
-              </div>
-            </div>
-            <div className="h-96 overflow-y-auto">
-              {filteredPackages && (
-                <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-                  <div className="space-y-6">
-                    {filteredPackages.map((pkg, index) => (
-                      <DetailRow
-                        key={index}
-                        label={pkg.name}
-                        value={pkg.version}
-                        updateButton={true} // Show the update button
-                        onUpdate={() => openUpdateDialog(pkg.name)}  // Pass the update function
-                        onDelete={() => handleDeleteDependency(pkg.name)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+{activeTab === 'packages' && (
+  <div>
+    <div className="flex flex-col md:flex-row justify-between items-center mb-4">
+      <div className="flex space-x-2 mb-4 md:mb-0">
+        <Button
+          onClick={handleAddDependency}
+          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Add Package
+        </Button>
+        <Button
+          onClick={handleReinstallDependencies}
+          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+        >
+          Reinstall Packages
+        </Button>
+      </div>
+      <div className="flex items-center relative w-full md:w-auto">
+        <Search className="absolute left-3 w-5 h-5 text-gray-500" />
+        <Input
+          type="search"
+          placeholder="Search packages"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
+        />
+      </div>
+    </div>
+    <div className="h-96 overflow-y-auto">
+      {filteredPackages && (
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+          <div className="space-y-6">
+            {filteredPackages.map((pkg, index) => (
+              <DetailRow
+                key={index}
+                label={pkg.name}
+                value={pkg.version}
+                updateButton={true}
+                onUpdate={() => openUpdateDialog(pkg.name)}
+                onDelete={() => handleDeleteDependency(pkg.name)}
+              />
+            ))}
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  </div>
+)}
+        
         <UpdateDependencyDialog
           isOpen={isUpdateDialogOpen}
           onClose={closeUpdateDialog}

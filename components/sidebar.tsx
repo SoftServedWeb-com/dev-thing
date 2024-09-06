@@ -15,9 +15,6 @@ const Sidebar = () => {
 
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
 
-  
-
-  
   const toggleLocalSites = () => {
     setIsProjectsOpen(prevState => !prevState);
   };
@@ -27,7 +24,10 @@ const Sidebar = () => {
   const handleProjectClick = (project: string) => {
     console.log("Project clicked:", project);
     router.push(`/project/?page=${encodeURIComponent(project)}`);
-    
+  }
+
+  if (projects.length === 0) {
+    return null;
   }
 
   return (
@@ -88,7 +88,6 @@ const Sidebar = () => {
               ) : projects.length > 0 ? (
                 <div id="projects-list" className="space-y-1">
                   {projects.map((project, index) => (
-                   
                       <Button
                         variant="ghost"
                         size="sm"
@@ -99,7 +98,6 @@ const Sidebar = () => {
                         <CircleChevronRight className="mr-2 h-5 w-5" />
                         {project}
                       </Button>
-                  
                   ))}
                 </div>
               ) : (

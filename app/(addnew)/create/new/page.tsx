@@ -51,6 +51,7 @@ const NewSitePage = () => {
       setCreationStatus("Starting project creation...");
       setError(null);
       try {
+        console.log("Creating project...", projectName, runtime, framework, location);
         await invoke("start_project_creation", {
           projectName,
           runtime,
@@ -88,7 +89,7 @@ const NewSitePage = () => {
   };
 
   return (
-    <div className="w-full max-w-lg mx-auto p-6 bg-gray-900 text-white rounded-lg shadow-lg">
+    <div className="w-screen max-w-lg mx-auto p-6  bg-gray-900 text-white rounded-lg shadow-lg">
       <div className="flex justify-between items-center mb-6">
         <Button
           onClick={handleGoBackClick}
@@ -118,7 +119,7 @@ const NewSitePage = () => {
           Choose Runtime
         </Label>
         <div className="flex gap-4">
-          {["npm", "pnpm", "bun"].map((r) => (
+          {[ "pnpm"].map((r) => (
             <Button
               key={r}
               onClick={() => setRuntime(r)}
@@ -134,21 +135,22 @@ const NewSitePage = () => {
       </div>
       <div className="mb-4">
         <Label className="block text-gray-300 mb-2" htmlFor="location">
-          Choose Project Location
+          Your Project Location
         </Label>
         <div className="flex items-center">
           <Input
             id="location"
             type="text"
             value={location}
+            
             readOnly
             placeholder="Choose location"
-            disabled={creationStatus === "Starting project creation..."}
+            disabled={true}
             className="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-400"
           />
           <Button
             onClick={handlePickLocation}
-            disabled={creationStatus === "Starting project creation..."}
+            disabled={true}
             className="ml-4 bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded-lg"
           >
             Browse

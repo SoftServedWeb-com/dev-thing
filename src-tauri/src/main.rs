@@ -1,11 +1,13 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt; // Add this import for Windows-specific extensions
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio, Child};
 use serde_json::Value;
-use tauri::{command, Manager, Window};
+use tauri::{command, Window};
 use tauri::api::path::home_dir;
 use std::fs;
 use std::thread;
@@ -26,6 +28,19 @@ use winapi::shared::minwindef::DWORD;
 use nix::unistd::Pid;
 #[cfg(unix)]
 use nix::sys::signal::{kill, Signal};
+
+use shlex::Shlex;
+
+fn parse_command(command: &str) -> Result<(String, Vec<String>), String> {
+    let lexer = Shlex::new(command);
+    let mut parts = lexer.collect::<Vec<String>>();
+    let executable = parts
+        .get(0)
+        .ok_or("Failed to parse command")?
+        .to_string();
+    let args = parts.split_off(1);
+    Ok((executable, args))
+}
 
 struct ProjectManager(Mutex<HashMap<u32, Child>>);
 
@@ -54,7 +69,7 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
         .map_err(|e| format!("Failed to parse package.json: {}", e))?;
 
     // let framework = detect_framework(&package_json);
-    let (framework, _command) = detect_framework(&package_json);
+    let (framework, _command) = detect_framework(&package_json, "");
     let runtime = detect_runtime_version(&path);
     let packages = extract_packages(&package_json);
 
@@ -66,13 +81,34 @@ fn analyze_project(path: String) -> Result<ProjectInfo, String> {
 }
 ///media/ron-tennyson/Work/Projects/local-node/node_modules/next/dist/bin/next
 
-fn detect_framework(package_json: &Value) -> (String, String) {
+fn detect_framework(package_json: &Value, path: &str) -> (String, String) {
     if package_json["dependencies"].get("next").is_some() {
-        ("Next.js".to_string(), "node node_modules/next/dist/bin/next dev".to_string())
+        let path_to_dev;
+        if cfg!(target_os = "windows") {
+            path_to_dev = format!("\"{}\\node_modules\\next\\dist\\bin\\next\" dev", path)
+        }
+        else {
+            path_to_dev = format!("\"{}/node_modules/next/dist/bin/next\" dev", path)
+        }
+        ("Next.js".to_string(), format!("node {}", path_to_dev).to_string())
     } else if package_json["dependencies"].get("react").is_some() {
-        ("React".to_string(), "node node_modules/.bin/react-scripts start".to_string())
+        let path_to_dev;
+        if cfg!(target_os = "windows") {
+            path_to_dev = format!("\"{}\\node_modules\\react-scripts\\scripts\\start.js\"", path)
+        }
+        else {
+            path_to_dev = format!("\"{}/node_modules/react-scripts/scripts/start.js\"", path)
+        }
+        ("React".to_string(), format!("node {}", path_to_dev).to_string())
     } else if package_json["dependencies"].get("vue").is_some() {
-        ("Vue.js".to_string(), "node node_modules/.bin/vue-cli-service serve".to_string())
+        let path_to_dev;
+        if cfg!(target_os = "windows") {
+            path_to_dev = format!("\"{}\\node_modules\\vue-cli-service\\bin\\vue-cli-service.js\"", path)
+        }
+        else {
+            path_to_dev = format!("\"{}/node_modules/vue-cli-service/bin/vue-cli-service.js\"", path)
+        }
+        ("Vue.js".to_string(), format!("node {}", path_to_dev).to_string())
     } else {
         ("Unknown".to_string(), "".to_string())
     }
@@ -125,11 +161,31 @@ fn detect_runtime(project_path: String) -> Result<String, String> {
 }
 
 #[command]
-fn launch_vscode(project_path: String) -> Result<(), String> {
-    Command::new("code")
-        .arg(project_path)
-        .spawn()
-        .map_err(|e| format!("Failed to launch VS Code: {}", e))?;
+fn launch_ide(project_path: String, ide: String) -> Result<(), String> {
+    let os = env::consts::OS;
+
+    match os {
+        "windows" => {
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("cmd")
+                    .args(&["/C", &ide, &project_path])
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch {}: {}", ide, e))?;
+            }       
+            
+        },
+        "macos" | "linux" => {
+            Command::new(&ide)
+                .arg(&project_path)
+                .spawn()
+                .map_err(|e| format!("Failed to launch {}: {}", ide, e))?;
+        },
+        _ => {
+            return Err("Unsupported operating system".into());
+        }
+    }
 
     Ok(())
 }
@@ -140,10 +196,14 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
     
     match os {
         "windows" => {
-            Command::new("explorer")
-                .args(["/select,", &project_path])
-                .spawn()
-                .map_err(|e| format!("Failed to open file explorer: {}", e))?;
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("explorer")
+                    .arg(&project_path)
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .spawn()
+                    .map_err(|e| format!("Failed to open file explorer: {}", e))?;
+            }
         },
         "macos" => {
             Command::new("open")
@@ -180,42 +240,69 @@ fn open_file_explorer(project_path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn start_project_creation(window: tauri::Window, runtime: String, framework: String, project_name: String, location: String) -> Result<(), String> {
+    let create_path;
+    if cfg!(target_os = "windows") {
+         create_path = format!("{}\\{}", location, project_name);
+    } else {
+         create_path = format!("{}/{}", location, project_name);
+    }
     thread::spawn(move || {
         window.emit("creation_status", "Starting project creation...").unwrap();
-
+        
         let cmd = match (runtime.as_str(), framework.as_str()) {
             ("pnpm", "next.js") => {
-                format!("cd \"{}\" && pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
+                vec!["pnpm", "dlx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("npm", "next.js") => {
-                format!("cd \"{}\" && npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
+                vec!["npx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("bun", "next.js") => {
-                format!("cd \"{}\" && bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
+                vec!["bunx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             _ => {
                 window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
                 return;
             }
         };
-
+        let cmd2 = match (runtime.as_str(), framework.as_str()) {
+            ("pnpm", "next.js") => {
+                format!("pnpm dlx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            ("npm", "next.js") => {
+                format!("npx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            ("bun", "next.js") => {
+                format!("bunx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            }
+            _ => {
+                window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
+                return;
+            }
+        };
+        println!("Command: {:?}", cmd2);
         let output = if cfg!(target_os = "windows") {
             Command::new("cmd")
-                .args(&["/C", &cmd])
+                .arg("/C")
+                .args(&cmd)
                 .output()
         } else {
+            
             Command::new("sh")
                 .arg("-c")
-                .arg(&cmd)
+                .arg(&cmd2)
                 .output()
         };
-
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 if output.status.success() {
                     window.emit("creation_status", "Project created successfully!").unwrap();
                 } else {
                     let error_message = String::from_utf8_lossy(&output.stderr);
+                    println!("Error: {:?}", output.stderr);
                     window.emit("creation_status", format!("Error: {}", error_message)).unwrap();
                 }
             },
@@ -229,48 +316,22 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
 }
 
 #[tauri::command]
-fn create_local_projects_folder() -> Result<String, String> {
-    if let Some(home_path) = home_dir() {
-        let projects_path = home_path.join("Local-Projects");
-        if !projects_path.exists() {
-            fs::create_dir_all(&projects_path).map_err(|err| err.to_string())?;
-        }
-        
-        Ok(projects_path.to_str().unwrap().to_string())
+fn create_local_projects_folder(folder_name: Option<String>, path: Option<String>) -> Result<String, String> {
+    let home_path = home_dir().ok_or("Could not determine home directory")?;
+    let projects_path = match (folder_name, path) {
+        (Some(name), Some(p)) => Path::new(&p).join(name),
+        (Some(name), None) => home_path.join(name),
+        (None, Some(p)) => Path::new(&p).to_path_buf(),
+        (None, None) => home_path.join("Local-Projects"),
+    };
 
-    } else {
-        Err("Could not determine home directory".into())
+    if !projects_path.exists() {
+        fs::create_dir_all(&projects_path).map_err(|err| err.to_string())?;
     }
+
+    Ok(projects_path.to_str().unwrap().to_string())
 }
 
-#[command]
-fn create_project(runtime: &str, framework: &str, project_name: &str, location: &str) -> Result<String, String> {
-  let cmd = match (runtime, framework) {
-      ("pnpm", "next.js") => {
-          format!("cd {} && pnpx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
-      }
-      ("npm", "next.js") => {
-          format!("cd {} && npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
-      }
-      ("bun", "next.js") => {
-          format!("cd {} && bunx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", location, project_name)
-      }
-      // Add other frameworks and commands as needed
-      _ => return Err("Unsupported runtime or framework".into()),
-  };
-
-  let output = Command::new("sh")
-      .arg("-c")
-      .arg(cmd)
-      .output()
-      .expect("Failed to execute command");
-  print!("{}", String::from_utf8_lossy(&output.stdout));
-  if output.status.success() {
-      Ok(String::from_utf8_lossy(&output.stdout).to_string())
-  } else {
-      Err(String::from_utf8_lossy(&output.stderr).to_string())
-  }
-}
 
 #[tauri::command]
 fn start_project(
@@ -279,31 +340,36 @@ fn start_project(
     state: State<'_, ProjectManager>,
 ) -> Result<u32, String> {
     // Read package.json
-    let package_json_path = format!("{}/package.json", project_path);
+    let package_json_path;
+    if cfg!(target_os = "windows") {
+        package_json_path = format!("{}\\package.json", project_path);
+    }
+    else {
+        package_json_path = format!("{}/package.json", project_path);
+    }
     let package_json: Value = serde_json::from_str(&std::fs::read_to_string(package_json_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
 
-    let (_framework, command) = detect_framework(&package_json);
+    let (_framework, command) = detect_framework(&package_json, &project_path);
     
     if command.is_empty() {
         return Err("Unsupported framework".to_string());
     }
 
+    let (executable, args) = parse_command(&command)?;
+
+    println!("Command: {}", command);
     // Spawn the child process
-    let mut child = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(&["/C", &command])
+    let mut child = 
+        Command::new(executable)
+            .args(&args)
             .current_dir(&project_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-    } else {
-        Command::new("sh")
-            .args(&["-c", &command])
-            .current_dir(&project_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    }.map_err(|e| e.to_string())?;
+            .spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        child.creation_flags(0x08000000) // CREATE_NO_WINDOW
+    }
 
     let pid = child.id();
 
@@ -311,7 +377,11 @@ fn start_project(
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
     
+    // ... existing code ...
+    println!("stdout: {:?}", stdout);
+    println!("stderr: {:?}", stderr);
     let window_clone = window.clone();
+// ... existing code ...
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
@@ -341,11 +411,13 @@ fn terminate_process(pid: u32) -> Result<(), String> {
     unsafe {
         let process_handle: HANDLE = OpenProcess(PROCESS_TERMINATE, 0, pid as DWORD);
         if process_handle.is_null() {
+            println!("Failed to open process");
             return Err("Failed to open process".to_string());
         }
 
         if TerminateProcess(process_handle, 1) == 0 {
             CloseHandle(process_handle);
+            println!("Failed to terminate process");
             return Err("Failed to terminate process".to_string());
         }
 
@@ -404,6 +476,10 @@ fn install_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -474,6 +550,10 @@ fn update_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -532,6 +612,10 @@ fn delete_dependency(
                 .current_dir(&project_path)
                 .output()
         };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -561,16 +645,92 @@ fn delete_dependency(
     Ok(())
 }
 
+#[command]
+fn update_project_path(new_path: String) -> Result<String, String> {
+    let home_path = home_dir().ok_or("Could not determine home directory")?;
+    let projects_path = if new_path.is_empty() {
+        home_path.join("Local-Projects")
+    } else {
+        home_path.join(new_path)
+    };
+
+    if !projects_path.exists() {
+        fs::create_dir_all(&projects_path).map_err(|err| err.to_string())?;
+    }
+
+    Ok(projects_path.to_str().unwrap().to_string())
+}
+
+#[command]
+fn reinstall_dependencies(
+    window: Window,
+    project_path: String,
+    runtime: String,
+) -> Result<(), String> {
+    let cmd = match runtime.as_str() {
+        "pnpm" => "pnpm install --force".to_string(),
+        "npm" => "npm install --force".to_string(),
+        "yarn" => "yarn install --force".to_string(),
+        "bun" => "bun install --force".to_string(),
+        _ => return Err("Unsupported runtime".to_string()),
+    };
+    println!("Executing command: {}", cmd);
+    thread::spawn(move || {
+        window.emit("reinstall_status", "Reinstalling dependencies...").unwrap();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(&["/C", &cmd])
+                .current_dir(&project_path)
+                .output()
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&project_path)
+                .output()
+        };
+        #[cfg(target_os = "windows")]
+        {
+            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        }
+        match output {
+            Ok(output) => {
+                println!("Command executed. Exit status: {}", output.status);
+                println!("Stdout: {}", String::from_utf8_lossy(&output.stdout));
+                println!("Stderr: {}", String::from_utf8_lossy(&output.stderr));
+                let message = format!("Dependencies reinstalled successfully!\n{}", String::from_utf8_lossy(&output.stdout));
+                if output.status.success() {
+                    window.emit("reinstall_status", message).unwrap();
+                } else {
+                    let error_message = String::from_utf8_lossy(&output.stderr);
+                    let status_message = if error_message.trim().is_empty() {
+                        format!("Reinstallation failed. Exit code: {}. Check stdout for details.", output.status.code().unwrap_or(-1))
+                    } else {
+                        format!("Error: {}", error_message)
+                    };
+                    println!("{}", status_message);
+                    window.emit("reinstall_status", status_message).unwrap();
+                }
+            },
+            Err(e) => {
+                let error_message = format!("Failed to execute command: {}", e);
+                println!("{}", error_message);
+                window.emit("reinstall_status", error_message).unwrap();
+            }
+        }
+    });
+    Ok(())
+}
+
 fn main() {
     // Initialize the state
-    let _ = fix_path_env::fix();
+    // let _ = fix_path_env::fix();
     tauri::Builder::default()
         .manage(ProjectManager(Mutex::new(HashMap::new()))) // Manage the state within Tauri
         .invoke_handler(tauri::generate_handler![
             create_local_projects_folder,
             start_project_creation,
-            create_project,
-            launch_vscode,
+            launch_ide,
             open_file_explorer,
             detect_runtime,
             analyze_project,
@@ -579,20 +739,12 @@ fn main() {
             install_dependency,
             update_dependency,
             delete_dependency,
+            update_project_path,
+            reinstall_dependencies,
         ])
-        .setup(|app| {
-            // Create the "Local Projects" folder on startup
-            let main_window = app.get_window("main").unwrap();
-            let projects_path = create_local_projects_folder().unwrap();
-
-            // Save the path to local storage (you can handle this via Tauri or JavaScript later)
-            main_window.eval(&format!(
-                "localStorage.setItem('projectsPath', '{}');",
-                projects_path
-            )).unwrap();
-
+        .setup(|_app| 
             Ok(())
-        })
+        )
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -47,6 +47,7 @@ const CreatePage = () => {
         </Button>
         <Button
           onClick={() => handleOptionClick("blueprint")}
+          disabled={true}
           className={`w-full py-4 rounded-lg ${
             selectedOption === "blueprint" ? "bg-purple-600" : "bg-gray-800"
           } hover:bg-purple-600 transition-all`}

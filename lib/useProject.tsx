@@ -3,29 +3,44 @@ import React, { createContext, useState, useEffect, useContext, ReactNode } from
 import { readDir } from "@tauri-apps/api/fs";
 
 interface ProjectsContextType {
-  projectsPath: string;
-  setProjectsPath: React.Dispatch<React.SetStateAction<string>>;
+  projectsPath: string | null;
+  setProjectsPath: React.Dispatch<React.SetStateAction<string | null>>;
   projects: string[];
   error: string | null;
+  platform: string | null;
 }
 
 const ProjectsContext = createContext<ProjectsContextType | undefined>(undefined);
 
 export const ProjectsProvider = ({ children }: { children: ReactNode }) => {
-  const [projectsPath, setProjectsPath] = useState(() => {
+  const [projectsPath, setProjectsPath] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      const storedPath = localStorage.getItem("projectsPath") || "/";
-      return storedPath;
+      const storedPath = localStorage.getItem("projectsPath");
+      return storedPath || null;
     }
-    return "";
+    return null;
   });
   
   const [projects, setProjects] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchPlatform = async () => {
+      if (typeof window !== 'undefined') {
+        const oss = await import("@tauri-apps/api/os");
+        const osPlatform = await oss.platform();
+        console.log("Platform in useProject", osPlatform)
+        setPlatform(osPlatform);
+        console.log("Platform in useProject after setPlatform", platform)
+      }
+    };
+
+    fetchPlatform();
+  }, []);
 
   useEffect(() => {
     const fetchProjects = async () => {
-    
       if (projectsPath) {
         try {
           const entries = await readDir(projectsPath);
@@ -47,8 +62,11 @@ export const ProjectsProvider = ({ children }: { children: ReactNode }) => {
     fetchProjects();
   }, [projectsPath]); // Runs whenever projectsPath changes
 
+  if (platform === null) {
+    return null; // or a loading spinner, or some other placeholder
+  }
   return (
-    <ProjectsContext.Provider value={{ projectsPath, setProjectsPath, projects, error }}>
+    <ProjectsContext.Provider value={{ projectsPath, setProjectsPath, projects, error, platform }}>
       {children}
     </ProjectsContext.Provider>
   );
