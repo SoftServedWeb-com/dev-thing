@@ -45,7 +45,7 @@
       "category": "DeveloperTool",
       "copyright": "",
       "deb": {
-        "depends": []
+        "depends": ["libwebkit2gtk-4.0-37"]
       },
       "externalBin": [],
       "icon": [

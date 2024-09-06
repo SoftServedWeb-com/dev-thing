@@ -22,45 +22,92 @@ pub fn ensure_node_installed() -> Result<(), String> {
     install_node_with_nvm()
 }
 
-fn install_nvm() -> Result<(), String> {
+#[command]
+pub fn install_nvm() -> Result<(), String> {
     let os = env::consts::OS;
-    let nvm_install_script = match os {
-        "windows" => "https://raw.githubusercontent.com/coreybutler/nvm-windows/master/nvm-setup.zip",
-        "macos" | "linux" => "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh",
-        _ => return Err("Unsupported operating system".to_string()),
-    };
+    let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))
+        .map_err(|e| format!("Failed to get home directory: {}", e))?;
 
-    let output = if os == "windows" {
-        Command::new("powershell")
-            .arg("-Command")
-            .arg(format!("Invoke-WebRequest -Uri {} -OutFile nvm-setup.zip; Expand-Archive -Path nvm-setup.zip -DestinationPath .; .\\nvm-setup.exe", nvm_install_script))
-            .output()
-    } else {
-        Command::new("sh")
-            .arg("-c")
-            .arg(format!("curl -o- {} | bash", nvm_install_script))
-            .output()
-    };
-
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(format!("Failed to install nvm: {}", String::from_utf8_lossy(&output.stderr)))
-            }
-        }
-        Err(e) => Err(format!("Failed to execute nvm install command: {}", e)),
+    match os {
+        "windows" => install_nvm_windows(&home_dir),
+        "macos" | "linux" => install_nvm_unix(&home_dir),
+        _ => Err("Unsupported operating system".to_string()),
     }
 }
 
-fn install_node_with_nvm() -> Result<(), String> {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("nvm install node")
-        .output();
+fn install_nvm_windows(home_dir: &str) -> Result<(), String> {
+    let nvm_install_script = "https://raw.githubusercontent.com/coreybutler/nvm-windows/master/nvm-setup.exe";
+    let nvm_setup_path = Path::new(home_dir).join("nvm-setup.exe");
 
-    match output {
+    // Download NVM installer
+    let output = Command::new("powershell")
+        .arg("-Command")
+        .arg(&format!("Invoke-WebRequest -Uri {} -OutFile {}", nvm_install_script, nvm_setup_path.display()))
+        .output()
+        .map_err(|e| format!("Failed to download NVM installer: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to download NVM installer: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // Run NVM installer
+    let output = Command::new(nvm_setup_path)
+        .arg("/SILENT")
+        .arg("/NORESTART")
+        .output()
+        .map_err(|e| format!("Failed to run NVM installer: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to install NVM: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    Ok(())
+}
+
+fn install_nvm_unix(home_dir: &str) -> Result<(), String> {
+    let nvm_install_script = "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh";
+
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(&format!("curl -o- {} | bash", nvm_install_script))
+        .output()
+        .map_err(|e| format!("Failed to install NVM: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to install NVM: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // Source NVM in the current shell
+    let nvm_dir = Path::new(home_dir).join(".nvm");
+    std::env::set_var("NVM_DIR", nvm_dir);
+    
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg("[ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\"")
+        .output()
+        .map_err(|e| format!("Failed to source NVM: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Failed to source NVM: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    Ok(())
+}
+
+fn install_node_with_nvm() -> Result<(), String> {
+    let os = env::consts::OS;
+    let command = if os == "windows" {
+        Command::new("cmd")
+            .args(&["/C", "nvm", "install", "node"])
+            .output()
+    } else {
+        Command::new("bash")
+            .arg("-c")
+            .arg("source $HOME/.nvm/nvm.sh && nvm install node")
+            .output()
+    };
+
+    match command {
         Ok(output) => {
             if output.status.success() {
                 Ok(())
@@ -146,3 +193,4 @@ pub fn check_nvm_installed() -> Result<bool, String> {
         Err(_) => Ok(false),
     }
 }
+

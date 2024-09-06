@@ -46,12 +46,36 @@ const SetupPage = () => {
     checkNodeInstallation();
   }, [router]);
 
+  //TODO: Install Node.js and NVM
   const handleManageNode = async () => {
-    // Simulate Node uninstallation
-    console.log("Uninstalling existing Node.js and related packages");
-    // Add logic to uninstall Node.js and related packages
-    setNvmInstalled(false);
-    setIsNodeDetected(false);
+
+    if(!nvmInstalled) {
+      try {
+        await invoke('install_nvm');
+      } catch (error) {
+        console.error("Failed to install NVM:", error);
+      }
+      const nvmInstalled = await invoke('check_nvm_installed');
+      if(nvmInstalled) {
+        setNvmInstalled(true);
+        localStorage.setItem('nvm', 'true');
+      }
+    }
+    else {
+      try {
+        await invoke('install_node_with_nvm');
+      } catch (error) {
+        console.error("Failed to install Node with NVM:", error);
+      }
+      const nodeInstalled = await invoke('check_node_installed');
+      if(nodeInstalled) {
+        setIsNodeDetected(false);
+        localStorage.setItem('nodeInstalled', 'true');
+      }
+    }
+    if(isNodeDetected && nvmInstalled) {
+      router.replace('/');
+    }
   };
 
   const handleContinueWithExistingNode = () => {

@@ -33,7 +33,7 @@ use shlex::Shlex;
 mod node_manager;
 use node_manager::check_node_installed;
 use node_manager::check_nvm_installed;
-
+use node_manager::install_nvm;
 
 fn parse_command(command: &str) -> Result<(String, Vec<String>), String> {
     let lexer = Shlex::new(command);
@@ -746,7 +746,8 @@ fn main() {
             update_project_path,
             reinstall_dependencies,     
             check_node_installed,
-            check_nvm_installed,        
+            check_nvm_installed,      
+            install_nvm,
         ])
         .setup(|_app| 
             Ok(())
