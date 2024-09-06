@@ -1,6 +1,6 @@
 # Local Node
 
-Local Node is an opens source alterative to LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface.
+Local Node is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface.
 
 ## Table of Contents
 
