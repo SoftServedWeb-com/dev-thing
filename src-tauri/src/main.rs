@@ -60,6 +60,7 @@ struct Package {
 }
 
 fn execute_command(cmd: &[&str], project_path: &str) -> std::io::Result<std::process::Output> {
+    println!("Executing command: {:?}", cmd);
     let mut command = if cfg!(target_os = "windows") {
         let mut cmd_process = Command::new("cmd");
         cmd_process.arg("/C");
@@ -285,10 +286,10 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
                 vec!["pnpm", "dlx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("npm", "next.js") => {
-                vec!["npx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
+                vec!["npx", "create-next-app@latest", &create_path, "--yes","--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("yarn", "next.js") => {
-                vec!["yarn", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
+                vec!["yarn", "create","next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
             ("pnpm", "vue") => {
                 vec!["pnpm", "create", "vue@latest", &project_name, "--typescript", "--eslint-with-prettier"]
@@ -297,16 +298,16 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
                 vec!["npm", "create", "vue@latest", &project_name,"--typescript", "--eslint-with-prettier"]
             }
             ("yarn", "vue") => {
-                vec!["yarn", "create", "vue@latest", &project_name,"--typescript", "--eslint-with-prettier"]
+                vec!["yarn", "dlx", "create-vue@latest", &project_name,"--typescript", "--eslint-with-prettier"]
             }
             ("pnpm", "nuxt") => {
-                vec!["echo", "pnpm", "|", "pnpm", "dlx","nuxi@latest", "init",&project_name, "--gitInit","--packageManager","pnpm"]
+                vec![ "pnpm", "dlx","nuxi@latest", "init",&project_name, "--gitInit","--packageManager","pnpm"]
             }
             ("npm", "nuxt") => {
-                vec!["echo", "npm", "|", "npx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","npm"]
+                vec![ "npx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","npm"]
             }
             ("yarn", "nuxt") => {
-                vec!["echo", "yarn", "|", "yarn", "dlx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","yarn"]
+                vec!["yarn", "dlx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","yarn"]
             }
             _ => {
                 window.emit("creation_status", "Error: Unsupported runtime or frameworks").unwrap();
@@ -321,25 +322,25 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
                 format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
             }
             ("yarn", "next.js") => {
-                format!("yarn create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
+                format!("yarn create next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
             }
             ("pnpm", "vue") => {
                 format!("pnpm create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
             }
             ("npm", "vue") => {
-                format!("npm init vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+                format!("npm create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
             }
             ("yarn", "vue") => {
-                format!("yarn create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+                format!("yarn dlx create-vue@latest {} -- --typescript --eslint-with-prettier", project_name)
             }
             ("pnpm", "nuxt") => {
-                format!("echo pnpm | pnpm dlx nuxi@latest init {}  --gitInit --packageManager pnpm", project_name)
+                format!("pnpm dlx nuxi@latest init {}  --gitInit --packageManager pnpm", project_name)
             }
             ("npm", "nuxt") => {
-                format!("echo npm | npx nuxi@latest init {}  --gitInit --packageManager npm", project_name)
+                format!("npx nuxi@latest init {}  --gitInit --packageManager npm", project_name)
             }
             ("yarn", "nuxt") => {
-                format!("echo yarn | yarn dlx nuxi@latest init {}  --gitInit --packageManager yarn", project_name)
+                format!("yarn dlx nuxi@latest init {}  --gitInit --packageManager yarn", project_name)
             }
             _ => {
                 window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
