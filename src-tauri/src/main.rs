@@ -59,6 +59,24 @@ struct Package {
     version: String,
 }
 
+fn execute_command(cmd: &[&str], project_path: &str) -> std::io::Result<std::process::Output> {
+    let mut command = if cfg!(target_os = "windows") {
+        let mut cmd_process = Command::new("cmd");
+        cmd_process.arg("/C");
+        cmd_process.args(cmd);
+        #[cfg(target_os = "windows")]
+        cmd_process.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd_process
+    } else {
+        let mut cmd_process = Command::new("sh");
+        cmd_process.arg("-c");
+        cmd_process.arg(&cmd.join(" "));
+        cmd_process
+    };
+    
+    command.current_dir(project_path).output()
+}
+
 #[command]
 fn analyze_project(path: String) -> Result<ProjectInfo, String> {
     let package_json_path = Path::new(&path).join("package.json");
@@ -100,16 +118,29 @@ fn detect_framework(package_json: &Value, path: &str) -> (String, String) {
             path_to_dev = format!("\"{}/node_modules/react-scripts/scripts/start.js\"", path)
         }
         ("React".to_string(), format!("node {}", path_to_dev).to_string())
-    } else if package_json["dependencies"].get("vue").is_some() {
+    }  else if  package_json["dependencies"].get("nuxt").is_some(){
         let path_to_dev;
         if cfg!(target_os = "windows") {
-            path_to_dev = format!("\"{}\\node_modules\\vue-cli-service\\bin\\vue-cli-service.js\"", path)
+            path_to_dev = format!("\"{}\\node_modules\\nuxt\\bin\\nuxt.mjs\" dev", path)
+
         }
         else {
-            path_to_dev = format!("\"{}/node_modules/vue-cli-service/bin/vue-cli-service.js\"", path)
+            path_to_dev = format!("\"{}/node_modules/nuxt/bin/nuxt.mjs\" dev", path)
+
+        }
+        ("Nuxt.js".to_string(), format!("node {}", path_to_dev).to_string())
+    }    
+     else if package_json["dependencies"].get("vue").is_some() {
+        let path_to_dev;
+        if cfg!(target_os = "windows") {
+            path_to_dev = format!("\"{}\\node_modules\\vite\\dist\\node\\cli.js\"", path)
+        }
+        else {
+            path_to_dev = format!("\"{}/node_modules/vite/dist/node/cli.js\"", path)
         }
         ("Vue.js".to_string(), format!("node {}", path_to_dev).to_string())
-    } else {
+    }
+     else {
         ("Unknown".to_string(), "".to_string())
     }
 }
@@ -151,8 +182,8 @@ fn extract_packages(package_json: &Value) -> Vec<Package> {
 fn detect_runtime(project_path: String) -> Result<String, String> {
     if fs::metadata(format!("{}/pnpm-lock.yaml", project_path)).is_ok() {
         Ok("pnpm".to_string())
-    } else if fs::metadata(format!("{}/bun.lockb", project_path)).is_ok() {
-        Ok("bun".to_string())
+    } else if fs::metadata(format!("{}/yarn.lock", project_path)).is_ok() {
+        Ok("yarn".to_string())
     } else if fs::metadata(format!("{}/package-lock.json", project_path)).is_ok() {
         Ok("npm".to_string())
     } else {
@@ -256,50 +287,104 @@ fn start_project_creation(window: tauri::Window, runtime: String, framework: Str
             ("npm", "next.js") => {
                 vec!["npx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
             }
-            ("bun", "next.js") => {
-                vec!["bunx", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
+            ("yarn", "next.js") => {
+                vec!["yarn", "create-next-app", &create_path, "--ts", "--eslint", "--tailwind", "--src-dir", "--app", "--no-import-alias"]
+            }
+            ("pnpm", "vue") => {
+                vec!["pnpm", "create", "vue@latest", &project_name, "--typescript", "--eslint-with-prettier"]
+            }
+            ("npm", "vue") => {
+                vec!["npm", "create", "vue@latest", &project_name,"--typescript", "--eslint-with-prettier"]
+            }
+            ("yarn", "vue") => {
+                vec!["yarn", "create", "vue@latest", &project_name,"--typescript", "--eslint-with-prettier"]
+            }
+            ("pnpm", "nuxt") => {
+                vec!["echo", "pnpm", "|", "pnpm", "dlx","nuxi@latest", "init",&project_name, "--gitInit","--packageManager","pnpm"]
+            }
+            ("npm", "nuxt") => {
+                vec!["echo", "npm", "|", "npx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","npm"]
+            }
+            ("yarn", "nuxt") => {
+                vec!["echo", "yarn", "|", "yarn", "dlx", "nuxi@latest", "init", &project_name, "--gitInit","--packageManager","yarn"]
             }
             _ => {
-                window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
+                window.emit("creation_status", "Error: Unsupported runtime or frameworks").unwrap();
                 return;
             }
         };
         let cmd2 = match (runtime.as_str(), framework.as_str()) {
             ("pnpm", "next.js") => {
-                format!("pnpm dlx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+                format!("pnpm dlx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
             }
             ("npm", "next.js") => {
-                format!("npx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+                format!("npx create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
             }
-            ("bun", "next.js") => {
-                format!("bunx create-next-app \"{}\" --ts --eslint --tailwind --src-dir --app --no-import-alias", create_path)
+            ("yarn", "next.js") => {
+                format!("yarn create-next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
+            }
+            ("pnpm", "vue") => {
+                format!("pnpm create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+            }
+            ("npm", "vue") => {
+                format!("npm init vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+            }
+            ("yarn", "vue") => {
+                format!("yarn create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+            }
+            ("pnpm", "nuxt") => {
+                format!("echo pnpm | pnpm dlx nuxi@latest init {}  --gitInit --packageManager pnpm", project_name)
+            }
+            ("npm", "nuxt") => {
+                format!("echo npm | npx nuxi@latest init {}  --gitInit --packageManager npm", project_name)
+            }
+            ("yarn", "nuxt") => {
+                format!("echo yarn | yarn dlx nuxi@latest init {}  --gitInit --packageManager yarn", project_name)
             }
             _ => {
                 window.emit("creation_status", "Error: Unsupported runtime or framework").unwrap();
                 return;
             }
         };
-        println!("Command: {:?}", cmd2);
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .arg("/C")
-                .args(&cmd)
-                .output()
-        } else {
-            
-            Command::new("sh")
-                .arg("-c")
-                .arg(&cmd2)
-                .output()
-        };
-        #[cfg(target_os = "windows")]
-        {
-            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
+        println!("Command: {:?}", cmd);
+        let output;
+        if cfg!(target_os = "windows") {
+            println!("Command: {:?}", cmd);
+            output = execute_command(&cmd, &location);
         }
+        else {
+            println!("Command2: {:?}", cmd2);
+            output = execute_command(&[&cmd2], &location);
+        }
+        
+        
         match output {
             Ok(output) => {
                 if output.status.success() {
-                    window.emit("creation_status", "Project created successfully!").unwrap();
+                    if framework == "next.js" || framework == "nuxt" {
+                        println!("Project created successfully!");
+                        window.emit("creation_status", "Project created successfully!").unwrap();
+                    }
+                    else
+                    if framework == "vue" {
+                        let install_cmd = format!("{} i", runtime);
+                        let install_output = execute_command(&[&install_cmd], &create_path);
+                        match install_output {
+                            Ok(install_output) => {
+                                if install_output.status.success() {
+                                    println!("Dependencies installed successfully!");
+                                    window.emit("creation_status", "Project created successfully!").unwrap();
+                                } else {
+                                    let error_message = String::from_utf8_lossy(&install_output.stderr);
+                                    println!("Error installing dependencies: {}", error_message);
+                                    window.emit("creation_status", format!("Error installing dependencies: {}", error_message)).unwrap();
+                                }
+                            },
+                            Err(e) => {
+                                window.emit("creation_status", format!("Failed to execute install command: {}", e)).unwrap();
+                            }
+                        }
+                    }
                 } else {
                     let error_message = String::from_utf8_lossy(&output.stderr);
                     println!("Error: {:?}", output.stderr);
@@ -359,17 +444,23 @@ fn start_project(
 
     println!("Command: {}", command);
     // Spawn the child process
-    let mut child = 
-        Command::new(executable)
-            .args(&args)
+    let mut command = Command::new(executable);
+        command.args(&args)
             .current_dir(&project_path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn().map_err(|e| e.to_string())?;
-    #[cfg(target_os = "windows")]
-    {
-        child.creation_flags(0x08000000) // CREATE_NO_WINDOW
-    }
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+
+let mut child = command.spawn().map_err(|e| e.to_string())?;
+    // #[cfg(target_os = "windows")]
+    // {
+    //     child.creation_flags(0x08000000) // CREATE_NO_WINDOW
+    // }
 
     let pid = child.id();
 
@@ -458,28 +549,13 @@ fn install_dependency(
         "pnpm" => format!("pnpm add {}", versioned_dependency),
         "npm" => format!("npm install {}", versioned_dependency),
         "yarn" => format!("yarn add {}", versioned_dependency),
-        "bun" => format!("bun add {}", versioned_dependency),
         _ => return Err("Unsupported runtime".to_string()),
     };
     println!("Executing command: {}", cmd);
     thread::spawn(move || {
         window.emit("install_status", "Installing dependency...").unwrap();
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", &cmd])
-                .current_dir(&project_path)
-                .output()
-        } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&cmd)
-                .current_dir(&project_path)
-                .output()
-        };
-        #[cfg(target_os = "windows")]
-        {
-            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
-        }
+        let output = execute_command(&[&cmd], &project_path);
+       
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -522,7 +598,6 @@ fn update_dependency(
             "pnpm" => format!("pnpm add {}@{}", dependency, ver),
             "npm" => format!("npm install {}@{}", dependency, ver),
             "yarn" => format!("yarn add {}@{}", dependency, ver),
-            "bun" => format!("bun add {}@{}", dependency, ver),
             _ => return Err("Unsupported runtime".to_string()),
         }
     } else {
@@ -530,7 +605,6 @@ fn update_dependency(
             "pnpm" => format!("pnpm update {}", dependency),
             "npm" => format!("npm update {}", dependency),
             "yarn" => format!("yarn upgrade {}", dependency),
-            "bun" => format!("bun update {}", dependency),
             _ => return Err("Unsupported runtime".to_string()),
         }
     };
@@ -538,22 +612,7 @@ fn update_dependency(
     println!("Executing command: {}", cmd);
     thread::spawn(move || {
         window.emit("update_status", "Updating dependency...").unwrap();
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", &cmd])
-                .current_dir(&project_path)
-                .output()
-        } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&cmd)
-                .current_dir(&project_path)
-                .output()
-        };
-        #[cfg(target_os = "windows")]
-        {
-            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
-        }
+        let output = execute_command(&[&cmd], &project_path);
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -594,28 +653,12 @@ fn delete_dependency(
         "pnpm" => format!("pnpm remove {}", dependency),
         "npm" => format!("npm uninstall {}", dependency),
         "yarn" => format!("yarn remove {}", dependency),
-        "bun" => format!("bun remove {}", dependency),
         _ => return Err("Unsupported runtime".to_string()),
     };
     println!("Executing command: {}", cmd);
     thread::spawn(move || {
         window.emit("delete_status", "Deleting dependency...").unwrap();
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", &cmd])
-                .current_dir(&project_path)
-                .output()
-        } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&cmd)
-                .current_dir(&project_path)
-                .output()
-        };
-        #[cfg(target_os = "windows")]
-        {
-            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
-        }
+        let output = execute_command(&[&cmd], &project_path);
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -671,28 +714,12 @@ fn reinstall_dependencies(
         "pnpm" => "pnpm install --force".to_string(),
         "npm" => "npm install --force".to_string(),
         "yarn" => "yarn install --force".to_string(),
-        "bun" => "bun install --force".to_string(),
         _ => return Err("Unsupported runtime".to_string()),
     };
     println!("Executing command: {}", cmd);
     thread::spawn(move || {
         window.emit("reinstall_status", "Reinstalling dependencies...").unwrap();
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", &cmd])
-                .current_dir(&project_path)
-                .output()
-        } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(&cmd)
-                .current_dir(&project_path)
-                .output()
-        };
-        #[cfg(target_os = "windows")]
-        {
-            output.creation_flags(0x08000000) // CREATE_NO_WINDOW
-        }
+        let output = execute_command(&[&cmd], &project_path);
         match output {
             Ok(output) => {
                 println!("Command executed. Exit status: {}", output.status);
@@ -722,6 +749,17 @@ fn reinstall_dependencies(
     Ok(())
 }
 
+#[command]
+fn delete_site(project_path: String) -> Result<(), String> {
+    let path = Path::new(&project_path);
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|e| format!("Failed to delete site: {}", e))?;
+        Ok(())
+    } else {
+        Err("Project path does not exist".to_string())
+    }
+}
+
 fn main() {
     // Initialize the state
     // let _ = fix_path_env::fix();
@@ -741,6 +779,7 @@ fn main() {
             delete_dependency,
             update_project_path,
             reinstall_dependencies,
+            delete_site,
         ])
         .setup(|_app| 
             Ok(())

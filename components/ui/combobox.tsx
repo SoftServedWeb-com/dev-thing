@@ -18,7 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 const frameworks = [
   { value: "next.js", label: "Next.js" },
-
+  { value: "vue", label: "Vue" },
+  { value: "nuxt", label: "Nuxt" },
 ];
 
 interface ComboboxDemoProps {

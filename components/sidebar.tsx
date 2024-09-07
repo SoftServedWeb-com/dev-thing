@@ -34,16 +34,7 @@ const Sidebar = () => {
     <TooltipProvider>
       <div className="flex h-screen bg-slate-800 text-white">
         <div className="w-16 bg-slate-800 flex flex-col items-center py-4">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button className="mb-8 p-2 rounded-full hover:bg-purple-700" aria-label="User Profile">
-                <User size={28} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>View and edit your profile</p>
-            </TooltipContent>
-          </Tooltip>
+          
 
           <Tooltip>
             <TooltipTrigger asChild>

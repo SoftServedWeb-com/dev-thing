@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { listen } from '@tauri-apps/api/event';
-
+import { useRouter } from 'next/navigation';
 
 const ideLaunch = async (projectId: string, platform: string,ide: string) => {
   const allProjectPath = localStorage.getItem('projectsPath');
@@ -59,6 +59,7 @@ const explorerLaunch = async (projectId: string, platform: string) => {
 };
 
 export default function Page() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('overview');
   const { projectName, isRunning, pid, setIsRunning, setPid, projectInfo, error, terminalOutput, setTerminalOutput, appendTerminalOutput, resetTerminalOutput, platform } = useProjectAnalyzer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -68,6 +69,8 @@ export default function Page() {
   const [dependencyToDelete, setDependencyToDelete] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(''); // State for search query
   const terminalRef = useRef<HTMLPreElement>(null);
+  const [isDeleteSiteDialogOpen, setIsDeleteSiteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false); // State for deleting project
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -302,175 +305,249 @@ export default function Page() {
     };
   }, []);
 
+  const deleteSite = async () => {
+    const allProjectPath = localStorage.getItem('projectsPath');
+    if (allProjectPath) {
+      let projectPath;
+      
+      if (platform === 'win32') {
+        projectPath = allProjectPath + '\\' + projectName;
+      } else {
+        projectPath = allProjectPath + '/' + projectName;
+      }
+      try {
+        setIsDeleting(true); // Set deleting state to true
+        await invoke('delete_site', { projectPath });
+        localStorage.removeItem(projectName as string);
+        localStorage.removeItem(`${projectName}_terminalOutput`);
+        
+        router.replace("/")
+        console.log(`Site ${projectName} deleted successfully`);
+        // Optionally, you can add more logic here, like redirecting the user
+      } catch (error) {
+        console.error('Error deleting site:', error);
+        appendTerminalOutput(`Error deleting site: ${error}`);
+      } finally {
+        setIsDeleting(false); // Set deleting state to false
+      }
+    }
+  };
+
+  const openDeleteSiteDialog = () => {
+    setIsDeleteSiteDialogOpen(true);
+  };
+
+  const closeDeleteSiteDialog = () => {
+    setIsDeleteSiteDialogOpen(false);
+  };
+
+  const confirmDeleteSite = () => {
+    deleteSite();
+    closeDeleteSiteDialog();
+  };
+
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen">
-      {/* Header Section */}
-      <header className="flex flex-col md:flex-row justify-between items-center mb-4 p-6">
-        <h1 className="text-3xl font-bold">{projectName}</h1>
-        <Button
-          onClick={isRunning ? stopLocalHost : localHostLaunch}
-          className={`text-white px-4 py-2 rounded-md flex items-center transition-colors mt-4 md:mt-0 ml-auto ${
-            isRunning ? 'bg-red-600 hover:bg-red-700' : 'bg-purple-600 hover:bg-purple-700'
-          }`}
-        >
-          {isRunning ? <CircleStop className="w-5 h-5 mr-2" /> : <Play className="w-5 h-5 mr-2" />}
-          {isRunning ? 'Stop Site' : 'Start Site'}
-        </Button>
-      </header>
+      {isDeleting ? (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="loader"></div>
+            <p className="text-xl mt-4">Deleting Project...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Header Section */}
+          <header className="flex flex-col md:flex-row justify-between items-center mb-4 p-6">
+            <h1 className="text-3xl font-bold">{projectName}</h1>
+            <div className="flex space-x-2">
+              <Button
+                onClick={isRunning ? stopLocalHost : localHostLaunch}
+                className={`text-white px-4 py-2 rounded-md flex items-center transition-colors mt-4 md:mt-0 ml-auto ${
+                  isRunning ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'
+                }`}
+              >
+                {isRunning ? <CircleStop className="w-5 h-5 mr-2" /> : <Play className="w-5 h-5 mr-2" />}
+                {isRunning ? 'Stop Site' : 'Start Site'}
+              </Button>
+              <Button
+                onClick={openDeleteSiteDialog}
+                className="bg-red-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-red-700 transition-colors"
+              >
+                Delete Site
+              </Button>
+            </div>
+          </header>
 
-      {/* Navigation Section */}
-      <nav className="mb-4 p-6">
-        <ul className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-6">
-          <li>
-            <Link
-              href="#"
-              onClick={() => explorerLaunch(projectName as string, platform as string)}
-              className="text-purple-400 hover:underline"
-            >
-              Go to Site Folder
-            </Link>
-          </li>
-          <li>
-            <Link
-              href="#"
-              onClick={() => ideLaunch(projectName as string, platform as string, "code")}
-              className="text-purple-400 hover:underline"
-            >
-              VS Code
-            </Link>
-          </li>
-          <li>
-            <Link
-              href="#"
-              onClick={() => ideLaunch(projectName as string, platform as string, "cursor")}
-              className="text-purple-400 hover:underline"
-            >
-              Cursor IDE
-            </Link>
-          </li>
-        </ul>
-      </nav>
+          {/* Navigation Section */}
+          <nav className="mb-4 p-6">
+            <ul className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-6">
+              <li>
+                <Link
+                  href="#"
+                  onClick={() => explorerLaunch(projectName as string, platform as string)}
+                  className="text-purple-400 hover:underline"
+                >
+                  Go to Site Folder
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="#"
+                  onClick={() => ideLaunch(projectName as string, platform as string, "code")}
+                  className="text-purple-400 hover:underline"
+                >
+                  VS Code
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="#"
+                  onClick={() => ideLaunch(projectName as string, platform as string, "cursor")}
+                  className="text-purple-400 hover:underline"
+                >
+                  Cursor IDE
+                </Link>
+              </li>
+            </ul>
+          </nav>
 
-      {/* Tabs Section */}
-      <div className="p-6">
-        <ul className="m-0 p-0 flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-6 border-b border-gray-700">
-          <li className={`pb-2 ${activeTab === 'overview' ? 'border-b-2 border-purple-500' : ''}`}>
-            <Link href="#" onClick={() => setActiveTab('overview')} className="text-gray-400 hover:text-purple-300">
-              Overview
-            </Link>
-          </li>
-          <li className={`pb-2 ${activeTab === 'packages' ? 'border-b-2 border-purple-500' : ''}`}>
-            <Link href="#" onClick={() => setActiveTab('packages')} className="text-gray-400 hover:text-purple-300">
-              Packages
-            </Link>
-          </li>
-          <li className={`pb-2 ${activeTab === 'terminal' ? 'border-b-2 border-purple-500' : ''}`}>
-            <Link href="#" onClick={() => setActiveTab('terminal')} className="text-gray-400 hover:text-purple-300">
-              Terminal
-            </Link>
-          </li>
-        </ul>
-      </div>
+          {/* Tabs Section */}
+          <div className="p-6">
+            <ul className="m-0 p-0 flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-6 border-b border-gray-700">
+              <li className={`pb-2 ${activeTab === 'overview' ? 'border-b-2 border-purple-500' : ''}`}>
+                <Link href="#" onClick={() => setActiveTab('overview')} className="text-gray-400 hover:text-purple-300">
+                  Overview
+                </Link>
+              </li>
+              <li className={`pb-2 ${activeTab === 'packages' ? 'border-b-2 border-purple-500' : ''}`}>
+                <Link href="#" onClick={() => setActiveTab('packages')} className="text-gray-400 hover:text-purple-300">
+                  Packages
+                </Link>
+              </li>
+              <li className={`pb-2 ${activeTab === 'terminal' ? 'border-b-2 border-purple-500' : ''}`}>
+                <Link href="#" onClick={() => setActiveTab('terminal')} className="text-gray-400 hover:text-purple-300">
+                  Terminal
+                </Link>
+              </li>
+            </ul>
+          </div>
 
-      {/* Content Section */}
-      <div className="p-6">
-        {activeTab === 'overview' && (
-          <div>
-            {error && <p className="text-red-500 mb-4">{error}</p>}
-            {projectInfo && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-6">
-                  <DetailRow label="Framework" value={projectInfo.framework} />
-                  <DetailRow label="Runtime" value={projectInfo.runtime}  />
+          {/* Content Section */}
+          <div className="p-6">
+            {activeTab === 'overview' && (
+              <div>
+                {error && <p className="text-red-500 mb-4">{error}</p>}
+                {projectInfo && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-6">
+                      <DetailRow label="Framework" value={projectInfo.framework} />
+                      <DetailRow label="Runtime" value={projectInfo.runtime}  />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'packages' && (
+              <div>
+                <div className="flex flex-col md:flex-row justify-between items-center mb-4">
+                  <div className="flex space-x-2 mb-4 md:mb-0">
+                    <Button
+                      onClick={handleAddDependency}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+                    >
+                      <Plus className="w-5 h-5 mr-2" />
+                      Add Package
+                    </Button>
+                    <Button
+                      onClick={handleReinstallDependencies}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+                    >
+                      Reinstall Packages
+                    </Button>
+                  </div>
+                  <div className="flex items-center relative w-full md:w-auto">
+                    <Search className="absolute left-3 w-5 h-5 text-gray-500" />
+                    <Input
+                      type="search"
+                      placeholder="Search packages"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
+                    />
+                  </div>
+                </div>
+                <div className="h-96 overflow-y-auto">
+                  {filteredPackages && (
+                    <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+                      <div className="space-y-6">
+                        {filteredPackages.map((pkg, index) => (
+                          <DetailRow
+                            key={index}
+                            label={pkg.name}
+                            value={pkg.version}
+                            updateButton={true}
+                            onUpdate={() => openUpdateDialog(pkg.name)}
+                            onDelete={() => handleDeleteDependency(pkg.name)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-          </div>
-        )}
+            
+            <UpdateDependencyDialog
+              isOpen={isUpdateDialogOpen}
+              onClose={closeUpdateDialog}
+              onSubmit={handleUpdateDependency}
+              dependency={selectedDependency || ''} // Pass selected dependency or empty string
+            />
+            <AddDependencydialogbox isOpen={isDialogOpen} onClose={closeDialog} onSubmit={handleDependencySubmit} />
 
-{activeTab === 'packages' && (
-  <div>
-    <div className="flex flex-col md:flex-row justify-between items-center mb-4">
-      <div className="flex space-x-2 mb-4 md:mb-0">
-        <Button
-          onClick={handleAddDependency}
-          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add Package
-        </Button>
-        <Button
-          onClick={handleReinstallDependencies}
-          className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-        >
-          Reinstall Packages
-        </Button>
-      </div>
-      <div className="flex items-center relative w-full md:w-auto">
-        <Search className="absolute left-3 w-5 h-5 text-gray-500" />
-        <Input
-          type="search"
-          placeholder="Search packages"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="bg-gray-800 w-full py-2 pl-10 text-sm text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-600"
-        />
-      </div>
-    </div>
-    <div className="h-96 overflow-y-auto">
-      {filteredPackages && (
-        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-          <div className="space-y-6">
-            {filteredPackages.map((pkg, index) => (
-              <DetailRow
-                key={index}
-                label={pkg.name}
-                value={pkg.version}
-                updateButton={true}
-                onUpdate={() => openUpdateDialog(pkg.name)}
-                onDelete={() => handleDeleteDependency(pkg.name)}
-              />
-            ))}
+            <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+              <AlertDialogContent className='bg-gray-800'>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className='text-red-500'>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription className='text-gray-300'>
+                    This action cannot be undone. This will permanently delete the selected dependency <b>{dependencyToDelete}</b>.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={closeDeleteDialog} className='bg-purple-600 hover:bg-purple-700'>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDeleteDependency} className='bg-red-500 hover:bg-red-600'>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            {activeTab === 'terminal' && (
+              <div>
+                <pre
+                  ref={terminalRef}
+                  className="bg-black text-white p-4 rounded-lg overflow-y-auto max-h-80 h-40 sm:h-60 md:h-80 lg:h-96"
+                  dangerouslySetInnerHTML={{ __html: terminalOutput || 'Terminal output will appear here...' }}
+                />
+              </div>
+            )}
           </div>
-        </div>
+
+          <AlertDialog open={isDeleteSiteDialogOpen} onOpenChange={setIsDeleteSiteDialogOpen}>
+            <AlertDialogContent className='bg-gray-800'>
+              <AlertDialogHeader>
+                <AlertDialogTitle className='text-red-500'>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription className='text-gray-300'>
+                  This action cannot be undone. This will permanently delete the site <b>{projectName}</b>.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={closeDeleteSiteDialog} className='bg-purple-600 hover:bg-purple-700'>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDeleteSite} className='bg-red-500 hover:bg-red-600'>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       )}
-    </div>
-  </div>
-)}
-        
-        <UpdateDependencyDialog
-          isOpen={isUpdateDialogOpen}
-          onClose={closeUpdateDialog}
-          onSubmit={handleUpdateDependency}
-          dependency={selectedDependency || ''} // Pass selected dependency or empty string
-        />
-        <AddDependencydialogbox isOpen={isDialogOpen} onClose={closeDialog} onSubmit={handleDependencySubmit} />
-
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <AlertDialogContent className='bg-gray-800'>
-            <AlertDialogHeader>
-              <AlertDialogTitle className='text-red-500'>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription className='text-gray-300'>
-                This action cannot be undone. This will permanently delete the selected dependency <b>{dependencyToDelete}</b>.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={closeDeleteDialog} className='bg-purple-600 hover:bg-purple-700'>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDeleteDependency} className='bg-red-500 hover:bg-red-600'>Delete</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {activeTab === 'terminal' && (
-          <div>
-            <pre
-              ref={terminalRef}
-              className="bg-black text-white p-4 rounded-lg overflow-y-auto max-h-80 h-40 sm:h-60 md:h-80 lg:h-96"
-            >
-              <code>{terminalOutput || 'Terminal output will appear here...'}</code>
-            </pre>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
