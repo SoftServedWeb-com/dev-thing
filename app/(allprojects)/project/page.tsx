@@ -71,12 +71,14 @@ export default function Page() {
   const [isDeleteSiteDialogOpen, setIsDeleteSiteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false); // State for deleting project
 
+  // Scroll to the bottom of the terminal output whenever it changes
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [terminalOutput]);
 
+  // Handle link clicks in the terminal output
   const handleLinkClick = useCallback(async (event: any) => {
     if (event.target.tagName === "A") {
       event.preventDefault();
@@ -87,6 +89,7 @@ export default function Page() {
     }
   }, []);
 
+  // Add and remove event listener for link clicks in the terminal output
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.addEventListener("click", handleLinkClick);
@@ -98,6 +101,7 @@ export default function Page() {
     };
   }, [handleLinkClick]);
 
+  // Launch the local host for the project
   const localHostLaunch = async () => {
     const allProjectPath = localStorage.getItem("projectsPath");
     if (allProjectPath) {
@@ -171,7 +175,7 @@ export default function Page() {
     }
   };
 
-  // Listen for install status updates
+  // Listen for various status updates regarding installation, updating, deleting, and reinstalling dependencies
   useEffect(() => {
     const installUnlisten = listen<string>("install_status", (event) => {
       appendTerminalOutput(event.payload);
@@ -240,6 +244,7 @@ export default function Page() {
     setIsDeleteDialogOpen(true); // Open the delete confirmation dialog
   };
 
+  // Confirm the deletion of a dependency to set loading state
   const confirmDeleteDependency = async () => {
     if (dependencyToDelete) {
       console.log(`Deleting dependency: ${dependencyToDelete}`);
@@ -275,6 +280,7 @@ export default function Page() {
     setDependencyToDelete(null);
   };
 
+  // Stop the local host for the project
   const stopLocalHost = async () => {
     try {
       console.log("Stopping project with PID:", pid);
@@ -300,6 +306,7 @@ export default function Page() {
     }
   };
 
+  // Filter packages based on the search query
   const filteredPackages = projectInfo?.packages.filter((pkg) =>
     pkg.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -329,6 +336,7 @@ export default function Page() {
     }
   };
 
+  // Delete the project
   const deleteSite = async () => {
     const allProjectPath = localStorage.getItem("projectsPath");
     if (allProjectPath) {
