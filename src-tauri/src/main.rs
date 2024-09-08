@@ -61,6 +61,7 @@ struct Package {
 
 fn execute_command(cmd: &[&str], project_path: &str) -> std::io::Result<std::process::Output> {
     println!("Executing command: {:?}", cmd);
+    
     let mut command = if cfg!(target_os = "windows") {
         let mut cmd_process = Command::new("cmd");
         cmd_process.arg("/C");
@@ -74,7 +75,12 @@ fn execute_command(cmd: &[&str], project_path: &str) -> std::io::Result<std::pro
         cmd_process.arg(&cmd.join(" "));
         cmd_process
     };
-    
+
+    let cmd_str = cmd.join(" ");
+    if cmd_str.contains("npm") {
+        command.env("npm_config_user_agent", "npm");
+    }
+
     command.current_dir(project_path).output()
 }
 
@@ -209,6 +215,7 @@ fn launch_ide(project_path: String, ide: String) -> Result<(), String> {
             
         },
         "macos" | "linux" => {
+            println!("Launching IDE: {}", ide);
             Command::new(&ide)
                 .arg(&project_path)
                 .spawn()
