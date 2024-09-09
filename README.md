@@ -24,7 +24,7 @@ Local Node is an open source LocalWP but for Node JS Applications. Effortlessly 
 ## Prerequisites
 
 - Node.js
-- npm/pnpm/yarn
+- npm/pnpm/yarn (yarn V2 not supported)
 - (libwebkit2gtk-4.0)[https://github.com/tauri-apps/tauri/issues/9662] (for the browser window in linux for ubuntu 24)
 - VS Code or Cursor IDE installed with the "code" or "cursor" command configured
 
@@ -69,7 +69,7 @@ We welcome contributions to improve Local Node! To get started, please follow th
 #### Prerequisites
 
 - Node.js
-- npm/pnpm/yarn
+- npm/pnpm/yarn (yarn V2 not supported)
 - [Tauri CLI](https://tauri.app/v1/guides/getting-started/prerequisites)
 
 1. Create an issue for the feature or fix you want to contribute.
