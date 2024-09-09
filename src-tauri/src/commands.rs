@@ -12,6 +12,8 @@ use crate::project_manager::terminate_process;
 use crate::utils::{execute_command, parse_command};
 use crate::project_manager::ProjectManager;
 use tauri::api::path::home_dir;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 #[derive(serde::Serialize)]
 pub struct ProjectInfo {
@@ -46,7 +48,7 @@ pub fn analyze_project(path: String) -> Result<ProjectInfo, String> {
         packages,
     })
 }
-
+// yarn plug and play doesn't have node modules folder
 pub fn detect_framework(package_json: &Value, path: &str) -> (String, String) {
     if package_json["dependencies"].get("next").is_some() {
         let path_to_dev;
