@@ -3,7 +3,7 @@ import React, { createContext, useState, useEffect, useContext, ReactNode, Suspe
 import { invoke } from '@tauri-apps/api/tauri';
 import { useSearchParams } from 'next/navigation';
 import { listen } from '@tauri-apps/api/event';
-import { os } from "@tauri-apps/api";
+import AnsiToHtml from 'ansi-to-html';
 import { useProjects } from "./useProject";
 
 interface ProjectInfo {
@@ -30,6 +30,7 @@ interface ProjectAnalyzerContextType {
 const ProjectAnalyzerContext = createContext<ProjectAnalyzerContextType | undefined>(undefined);
 
 export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) => {
+  const ansiToHtml = new AnsiToHtml();
   const { platform } = useProjects();
   const searchParams = useSearchParams();
   const projectNameFromURL = searchParams.get('page') || '';
@@ -41,8 +42,11 @@ export const ProjectAnalyzerProvider = ({ children }: { children: ReactNode }) =
   const [terminalOutput, setTerminalOutput] = useState('');
 
   const appendTerminalOutput = (output: string) => {
+    const ansiToHtml = new AnsiToHtml();
+    const htmlOutput = ansiToHtml.toHtml(output);
+  
     setTerminalOutput(prev => {
-      const newOutput = prev + output + '\n';
+      const newOutput = prev + htmlOutput + '<br/>';
       localStorage.setItem(`${projectName}_terminalOutput`, newOutput);
       return newOutput;
     });

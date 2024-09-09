@@ -24,7 +24,7 @@ const CreatePage = () => {
 
   const handleCloseClick = () => {
  
-    router.replace("/");
+    router.back();
   };
 
   return (
