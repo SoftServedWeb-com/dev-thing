@@ -25,7 +25,7 @@ Local Node is an open source LocalWP but for Node JS Applications. Effortlessly 
 
 - Node.js
 - npm/pnpm/yarn (yarn V2 not supported)
-- (libwebkit2gtk-4.0)[https://github.com/tauri-apps/tauri/issues/9662] (for the browser window in linux for ubuntu 24)
+- [libwebkit2gtk-4.0](https://github.com/tauri-apps/tauri/issues/9662) (for the browser window in linux for ubuntu 24)
 - VS Code or Cursor IDE installed with the "code" or "cursor" command configured
 
 ## Installation
