@@ -30,28 +30,28 @@ dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly m
 
 ## Installation
 
-You can download the binaries for your operating system from the [releases page](https://github.com/SoftServedWeb-com/local-node/releases). Follow the instructions below for your platform.
+You can download the binaries for your operating system from the [releases page](https://github.com/SoftServedWeb-com/dev-thing/releases). Follow the instructions below for your platform.
 
 ### Windows
 
-1. Download the latest `.exe` file from the [releases page](https://github.com/SoftServedWeb-com/local-node/releases).
+1. Download the latest `.exe` file from the [releases page](https://github.com/SoftServedWeb-com/dev-thing/releases).
 2. Run the `.exe` file and follow the installation prompts.
 
 
 ### macOS
 
-1. Download the latest `.dmg` file from the [releases page](https://github.com/SoftServedWeb-com/local-node/releases).
+1. Download the latest `.dmg` file from the [releases page](https://github.com/SoftServedWeb-com/dev-thing/releases).
 2. Open the `.dmg` file and drag the application into the `Applications` folder.
 
 
 ### Linux
 
-1. Download the latest `.tar.gz` file from the [releases page](https://github.com/SoftServedWeb-com/local-node/releases).
+1. Download the latest `.tar.gz` file from the [releases page](https://github.com/SoftServedWeb-com/dev-thing/releases).
 2. Extract the contents of the archive:
 
     ```bash
-    tar -xvzf local-node-*.tar.gz
-    cd local-node
+    tar -xvzf dev-thing-*.tar.gz
+    cd dev-thing
     ```
 
 3. Run the setup script:
@@ -62,7 +62,7 @@ You can download the binaries for your operating system from the [releases page]
 
 ## Contributing
 
-We welcome contributions to improve Local Node! To get started, please follow the steps below.
+We welcome contributions to improve dev-thing! To get started, please follow the steps below.
 
 ### Setup for Contribution
 
@@ -77,13 +77,13 @@ We welcome contributions to improve Local Node! To get started, please follow th
 3. Clone the forked repository to your local machine:
 
     ```bash
-    git clone https://github.com/YOUR_USERNAME/local-node.git
+    git clone https://github.com/YOUR_USERNAME/dev-thing.git
     ```
 
 4. Install the necessary dependencies:
 
     ```bash
-    cd local-node
+    cd dev-thing
     pnpm install
     pnpm tauri dev
     ```

@@ -7,7 +7,7 @@
     "distDir": "../out"
   },
   "package": {
-    "productName": "local-node",
+    "productName": "dev-thing",
     "version": "0.1.0"
   },
   "tauri": {
@@ -58,7 +58,7 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.local-node.app",
+      "identifier": "com.dev-thing.app",
       "longDescription": "",
       "macOS": {
         "entitlements": null,
@@ -87,7 +87,7 @@
         "fullscreen": false,
         "height": 600,
         "resizable": true,
-        "title": "local-node",
+        "title": "dev-thing",
         "width": 800
       }
     ]
