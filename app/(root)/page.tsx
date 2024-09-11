@@ -145,7 +145,7 @@ const DashboardPage = () => {
 
   return !projectsPath ? (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-purple-200 p-6">
-    <h1 className="text-4xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">Welcome to Local</h1>
+    <h1 className="text-4xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">Welcome to dev-thing</h1>
     <Tabs defaultValue="existing" className="w-full max-w-md bg" onValueChange={handleTabChange}>
       <TabsList className="grid w-full  grid-cols-2 mb-8 bg-gray-800">
         <TabsTrigger value="existing" className="px-3 py-2 rounded-l-lg  bg-gray-800 text-white data-[state=active]:bg-purple-700 data-[state=active]:text-white transition-colors">
