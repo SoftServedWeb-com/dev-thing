@@ -1,6 +1,6 @@
-# Local Node
+# dev-thing
 
-Local Node is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface.
+dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface.
 
 ## Table of Contents
 
