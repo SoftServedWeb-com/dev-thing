@@ -1,5 +1,5 @@
 {
-  "name": "local-node",
+  "name": "dev-thing",
   "version": "0.1.0",
   "private": true,
   "scripts": {
