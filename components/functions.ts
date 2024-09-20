@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/tauri';
 
 
+
 export const ideLaunch = async (projectId: string, platform: string,ide: string) => {
     const allProjectPath = localStorage.getItem('projectsPath');
     console.log(allProjectPath);
