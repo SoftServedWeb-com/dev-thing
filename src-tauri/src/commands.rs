@@ -280,13 +280,13 @@ pub fn start_project_creation(window: tauri::Window, runtime: String, framework:
                 format!("yarn create next-app {} --ts --eslint --tailwind --src-dir --app --no-import-alias", project_name)
             }
             ("pnpm", "vue") => {
-                format!("pnpm create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+                format!("pnpm create vue@latest {} --typescript --eslint-with-prettier", project_name)
             }
             ("npm", "vue") => {
-                format!("npm create vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+                format!("npm create vue@latest {} --typescript --eslint-with-prettier", project_name)
             }
             ("yarn", "vue") => {
-                format!("yarn dlx create-vue@latest {} -- --typescript --eslint-with-prettier", project_name)
+                format!("yarn dlx create-vue@latest {} --typescript --eslint-with-prettier", project_name)
             }
             ("pnpm", "nuxt") => {
                 format!("pnpm dlx nuxi@latest init {}  --gitInit --packageManager pnpm", project_name)
@@ -317,13 +317,14 @@ pub fn start_project_creation(window: tauri::Window, runtime: String, framework:
         match output {
             Ok(output) => {
                 if output.status.success() {
-                    if framework == "next.js" || framework == "nuxt" {
+                    if framework == "next.js" || framework == "nuxt"  {
                         println!("Project created successfully!");
                         window.emit("creation_status", "Project created successfully!").unwrap();
                     }
                     else
                     if framework == "vue" {
                         let install_cmd = format!("{} i", runtime);
+                        print!("path is {}",create_path);
                         let install_output = execute_command(&[&install_cmd], &create_path);
                         match install_output {
                             Ok(install_output) => {
@@ -341,6 +342,7 @@ pub fn start_project_creation(window: tauri::Window, runtime: String, framework:
                             }
                         }
                     }
+
                 } else {
                     let error_message = String::from_utf8_lossy(&output.stderr);
                     println!("Error: {:?}", output.stderr);
