@@ -68,8 +68,7 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Rename and find release assets
-        id: find_assets
+      - name: Rename release assets
         shell: bash
         run: |
           for file in target/release/bundle/*/*.{rpm,dmg,AppImage,deb,exe,msi,app.tar.gz}; do
@@ -78,8 +77,6 @@ jobs:
               new_name="dev-thing.$extension"
               mv "$file" "$(dirname "$file")/$new_name"
               echo "Renamed $(basename "$file") to $new_name"
-              echo "asset_path=$(dirname "$file")/$new_name" >> $GITHUB_OUTPUT
-              echo "asset_name=$new_name" >> $GITHUB_OUTPUT
             fi
           done
 
@@ -94,12 +91,12 @@ jobs:
           draft: true
           prerelease: false
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.find_assets.outputs.asset_path }}
-          asset_name: ${{ steps.find_assets.outputs.asset_name }}
-          asset_content_type: application/octet-stream
+          asset_path: ${{ github.workspace }}/target/release/bundle/**/*
+          asset_name: dev-thing-${{ matrix.platform }}${{ matrix.args }}-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
