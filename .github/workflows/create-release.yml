@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+          - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
+          - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+          - platform: 'ubuntu-22.04'
             args: ''
           - platform: 'windows-latest'
             args: ''
@@ -32,7 +32,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      # Setup pnpm environment with the latest version
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
@@ -61,24 +60,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app
-          releaseName: 'App'
+          tagName: app-v__VERSION__
+          releaseName: 'App v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Rename Artifacts
+      - name: Rename release assets
+        shell: bash
         run: |
-          for file in target/release/*; do
-            extension="${file##*.}"
-            mv "$file" "dev-thing.${extension}"
+          for file in target/release/bundle/*/*.{rpm,dmg,AppImage,deb,exe,msi,app.tar.gz}; do
+            if [[ -f "$file" ]]; then
+              extension="${file##*.}"
+              new_name="dev-thing.$extension"
+              mv "$file" "$(dirname "$file")/$new_name"
+              echo "Renamed $(basename "$file") to $new_name"
+            fi
           done
 
-      - name: Upload Release Assets
+      - name: Upload renamed assets
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dev-thing.*
-          asset_name: dev-thing.${{ file_extension }}
+          asset_path: ./target/release/bundle/*/*
+          asset_name: dev-thing.${{ matrix.platform }}.${{ matrix.arch }}.${{ matrix.ext }}
           asset_content_type: application/octet-stream
