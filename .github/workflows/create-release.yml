@@ -97,6 +97,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/bundle/*/*
-          asset_name: dev-thing.${{ matrix.platform }}.${{ matrix.arch }}.${{ matrix.ext }}
-          asset_content_type: application/octet-stream
+          asset_path: ${{ github.workspace }}/target/release/bundle/*/*.{rpm,dmg,AppImage,deb,exe,msi,app.tar.gz}
+          asset_name: dev-thing-${{ matrix.platform }}${{ matrix.args }}-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
