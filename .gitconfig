@@ -1,0 +1,11 @@
+[core]
+    editor = true
+
+[commit]
+    template = 
+
+[alias]
+    cz = !npx cz
+
+[init]
+    defaultBranch = main
