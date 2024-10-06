@@ -1,6 +1,6 @@
 # dev-thing
 
-dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface.
+dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface. [Get Started using devthing](GETTING_STARTED.md)
 
 ## Table of Contents
 
