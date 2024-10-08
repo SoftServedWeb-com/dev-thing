@@ -1,9 +1,10 @@
 ---
-name: 🔧 Improvement Proposal
+name: "\U0001F527 Improvement Proposal"
 about: Suggest an improvement or enhancement for an existing feature in DevKit
 title: "[Improvement] "
-labels: improvement
-assignees: ""
+labels: ''
+assignees: ''
+
 ---
 
 **What needs improvement?**

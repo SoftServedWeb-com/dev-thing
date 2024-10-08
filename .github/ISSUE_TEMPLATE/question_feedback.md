@@ -1,9 +1,10 @@
 ---
-name: 💬 General Question / Feedback
+name: "\U0001F4AC General Question / Feedback"
 about: Ask a question or provide general feedback on DevKit
 title: "[Question/Feedback] "
-labels: question, feedback
-assignees: ""
+labels: question
+assignees: ''
+
 ---
 
 **Your question or feedback**

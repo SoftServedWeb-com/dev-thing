@@ -1,9 +1,10 @@
 ---
-name: 🐞 Bug Report
+name: "\U0001F41E Bug Report"
 about: Report a bug to help us improve DevKit
 title: "[Bug] "
 labels: bug
-assignees: ""
+assignees: ''
+
 ---
 
 **Describe the bug**
@@ -27,8 +28,8 @@ If applicable, add screenshots to help explain your problem.
 
 - OS: [e.g. Windows, macOS, Linux]
 - Node.js version [e.g. 16.0.0]
-- Framework and version (e.g. React, Next.js, Svelte)
-- DevKit version [e.g. 1.0.0]
+- Framework and version (e.g. Vue, Next.js, Nuxt)
+- DevThing version [e.g. 1.0.0]
 
 **Additional context**
 Add any other context about the problem here.
