@@ -1,6 +1,6 @@
 ---
 name: "\U0001F680 Feature Request"
-about: Suggest an idea or improvement for DevKit
+about: Suggest an idea or improvement for DevThing
 title: "[Feature] "
 labels: enhancement
 assignees: ''

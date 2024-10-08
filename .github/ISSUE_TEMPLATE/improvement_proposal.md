@@ -1,6 +1,6 @@
 ---
 name: "\U0001F527 Improvement Proposal"
-about: Suggest an improvement or enhancement for an existing feature in DevKit
+about: Suggest an improvement or enhancement for an existing feature in DevThing
 title: "[Improvement] "
 labels: ''
 assignees: ''
