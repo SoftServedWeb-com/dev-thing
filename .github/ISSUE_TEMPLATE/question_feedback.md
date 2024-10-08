@@ -1,6 +1,6 @@
 ---
 name: "\U0001F4AC General Question / Feedback"
-about: Ask a question or provide general feedback on DevKit
+about: Ask a question or provide general feedback on DevThing
 title: "[Question/Feedback] "
 labels: question
 assignees: ''

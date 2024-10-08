@@ -1,6 +1,6 @@
 ---
 name: "\U0001F41E Bug Report"
-about: Report a bug to help us improve DevKit
+about: Report a bug to help us improve DevThing
 title: "[Bug] "
 labels: bug
 assignees: ''
