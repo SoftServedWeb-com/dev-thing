@@ -1,9 +1,10 @@
 ---
-name: ⚙️ Custom Configuration Request
+name: "⚙️ Custom Configuration Request"
 about: Request help with custom configurations in DevKit
 title: "[Config] "
-labels: configuration
-assignees: ""
+labels: ''
+assignees: ''
+
 ---
 
 **Describe your configuration issue**
