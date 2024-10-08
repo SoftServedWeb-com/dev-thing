@@ -12,10 +12,10 @@ dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly m
   - [Windows](#windows)
   - [macOS](#macos)
   - [Linux](#linux)
-- [Running the Application](#running-the-application)
 - [Contributing](#contributing)
   - [Setup for Contribution](#setup-for-contribution)
-- [License](#license)
+  - [Contributing guidelines](CONTRIBUTING.md)
+- [License](LICENSE)
 
 ## Features
 
