@@ -2,6 +2,9 @@
 
 dev-thing is an open source LocalWP but for Node JS Applications. Effortlessly manage your Node JS applications with a simple and intuitive interface. [Get Started using devthing](GETTING_STARTED.md)
 
+# Join Our community
+<a href="https://discord.gg/QzRSkhE7zc"><b>Discord</b></a> •
+
 ## Table of Contents
 
 - [Features](#features)
